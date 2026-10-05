@@ -1,0 +1,15 @@
+# NVIDIA GPU for the local models (much faster answers). Copy this file to docker-compose.override.yml;
+# Docker Compose picks the override up automatically. Needs Docker Desktop with WSL2 (Windows) or the
+# NVIDIA Container Toolkit (Linux). The override is git-ignored because it is machine-specific.
+services:
+  ollama:
+    environment:
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_NUM_PARALLEL: "1"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

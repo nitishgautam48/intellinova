@@ -1,0 +1,25 @@
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	# FastAPI gateway
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	# GoTrue, only for OAuth provider callbacks and email verification links.
+	# All other auth traffic goes through /api/auth so the API can set cookies.
+	handle_path /auth/v1/* {
+		reverse_proxy gotrue:9999
+	}
+
+	# Next.js web app
+	handle {
+		reverse_proxy web:3000
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}

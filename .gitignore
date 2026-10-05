@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.venv/
+node_modules/
+.next/
+*.tsbuildinfo
+next-env.d.ts
+web/public/workbox-*.js
+web/public/swe-worker-*.js
+docker-compose.override.yml
+.DS_Store
+Thumbs.db

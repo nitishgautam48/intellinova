@@ -1,0 +1,15 @@
+# Keep line endings correct whichever OS the repo is cloned on.
+* text=auto
+# Run inside Linux containers: must stay LF (a CRLF init.sh breaks the database's first start).
+*.sh text eol=lf
+Dockerfile text eol=lf
+Caddyfile text eol=lf
+*.py text eol=lf
+# Windows double-click shortcuts need CRLF.
+*.bat text eol=crlf
+# Binary files
+*.pdf binary
+*.png binary
+*.jpg binary
+*.woff2 binary
+*.ico binary

@@ -1,0 +1,10 @@
+# Optional, heavier components. Install with:  pip install -r requirements-extras.txt
+# (or build the image with --build-arg EXTRAS=1)
+
+# Layout-aware PDF parsing (used automatically when installed; PDF_PARSER=pymupdf to disable)
+docling>=2.50
+# Refit BKT parameters from logged answers (weekly Celery task)
+pyBKT>=1.4
+pandas>=2.2
+# Comment sentiment for the YouTube signal (distilbert)
+transformers>=4.45

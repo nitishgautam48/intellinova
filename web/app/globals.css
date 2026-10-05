@@ -1,0 +1,223 @@
+@import "tailwindcss";
+
+/* Design tokens from the IntelliNova design (Claude Design project). */
+:root,
+[data-theme="light"] {
+  --bg: oklch(0.975 0.004 185);
+  --surface: oklch(0.997 0.002 185);
+  --surface2: oklch(0.955 0.007 185);
+  --line: oklch(0.905 0.01 185);
+  --ink: oklch(0.21 0.025 185);
+  --ink2: oklch(0.44 0.022 185);
+  --ink3: oklch(0.6 0.016 185);
+  --pri: oklch(0.52 0.13 162);
+  --pri-hover: oklch(0.46 0.13 162);
+  --pri-soft: oklch(0.95 0.035 162);
+  --pri-ink: oklch(0.42 0.1 162);
+  --on-pri: #fff;
+  --teal: oklch(0.6 0.1 192);
+  --teal-soft: oklch(0.95 0.03 192);
+  --teal-ink: oklch(0.43 0.08 192);
+  --ok: oklch(0.6 0.14 152);
+  --ok-soft: oklch(0.95 0.04 152);
+  --ok-ink: oklch(0.42 0.1 152);
+  --warn: oklch(0.76 0.14 75);
+  --warn-soft: oklch(0.96 0.05 85);
+  --warn-ink: oklch(0.48 0.11 60);
+  --err: oklch(0.58 0.19 25);
+  --err-soft: oklch(0.955 0.03 25);
+  --err-ink: oklch(0.47 0.16 25);
+  --shadow: 0 1px 2px oklch(0.2 0.02 265 / 0.06), 0 10px 30px -14px oklch(0.2 0.02 265 / 0.18);
+  --side: oklch(0.2 0.025 185);
+  --side2: oklch(0.26 0.03 185);
+  --side-ink: oklch(0.92 0.01 185);
+  --side-ink2: oklch(0.72 0.02 185);
+  --stripe: oklch(0.93 0.008 185);
+  --glow: none;
+  --grad: linear-gradient(100deg, oklch(0.55 0.1 200), oklch(0.56 0.14 160) 55%, oklch(0.6 0.15 140));
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --bg: oklch(0.15 0.006 190);
+  --surface: oklch(0.185 0.008 190);
+  --surface2: oklch(0.225 0.01 190);
+  --line: oklch(0.9 0.02 170 / 0.08);
+  --ink: oklch(0.965 0.006 170);
+  --ink2: oklch(0.76 0.012 180);
+  --ink3: oklch(0.58 0.012 185);
+  --pri: oklch(0.8 0.15 162);
+  --pri-hover: oklch(0.86 0.13 162);
+  --pri-soft: oklch(0.8 0.15 162 / 0.12);
+  --pri-ink: oklch(0.87 0.12 162);
+  --on-pri: oklch(0.18 0.035 170);
+  --teal: oklch(0.78 0.1 200);
+  --teal-soft: oklch(0.78 0.1 200 / 0.12);
+  --teal-ink: oklch(0.86 0.08 200);
+  --ok: oklch(0.78 0.14 150);
+  --ok-soft: oklch(0.78 0.14 150 / 0.12);
+  --ok-ink: oklch(0.86 0.11 150);
+  --warn: oklch(0.83 0.11 85);
+  --warn-soft: oklch(0.83 0.11 85 / 0.12);
+  --warn-ink: oklch(0.89 0.09 88);
+  --err: oklch(0.72 0.14 25);
+  --err-soft: oklch(0.72 0.14 25 / 0.13);
+  --err-ink: oklch(0.86 0.08 25);
+  --shadow: 0 1px 0 oklch(1 0 0 / 0.035) inset, 0 20px 44px -22px oklch(0.05 0.02 190);
+  --side: oklch(0.125 0.006 190);
+  --side2: oklch(0.2 0.01 190);
+  --side-ink: oklch(0.95 0.006 170);
+  --side-ink2: oklch(0.68 0.012 180);
+  --stripe: oklch(0.205 0.008 190);
+  --glow: radial-gradient(50% 40% at 0% 0%, oklch(0.6 0.13 165 / 0.16), transparent 70%),
+    radial-gradient(35% 35% at 100% 70%, oklch(0.6 0.1 195 / 0.08), transparent 70%);
+  --grad: linear-gradient(100deg, oklch(0.82 0.1 195), oklch(0.83 0.15 158) 55%, oklch(0.88 0.14 135));
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface2: var(--surface2);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-ink2: var(--ink2);
+  --color-ink3: var(--ink3);
+  --color-pri: var(--pri);
+  --color-pri-hover: var(--pri-hover);
+  --color-pri-soft: var(--pri-soft);
+  --color-pri-ink: var(--pri-ink);
+  --color-on-pri: var(--on-pri);
+  --color-teal: var(--teal);
+  --color-teal-soft: var(--teal-soft);
+  --color-teal-ink: var(--teal-ink);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-ok-ink: var(--ok-ink);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-warn-ink: var(--warn-ink);
+  --color-err: var(--err);
+  --color-err-soft: var(--err-soft);
+  --color-err-ink: var(--err-ink);
+  --color-side: var(--side);
+  --color-side2: var(--side2);
+  --color-side-ink: var(--side-ink);
+  --color-side-ink2: var(--side-ink2);
+  --color-stripe: var(--stripe);
+  --font-sans: "Figtree Variable", "Figtree", system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque Variable", "Bricolage Grotesque", "Figtree Variable", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
+  --shadow-card: var(--shadow);
+}
+
+/* Element defaults live in the base layer so Tailwind utilities (text-*, hover:no-underline…) win. */
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  html,
+  body {
+    margin: 0;
+    min-height: 100%;
+  }
+  body {
+    background: var(--bg);
+    background-image: var(--glow);
+    background-attachment: fixed;
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+  button {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: default;
+  }
+  a {
+    color: var(--pri-ink);
+    text-decoration: none;
+  }
+  a:hover {
+    text-decoration: underline;
+  }
+  :focus-visible {
+    outline: 2px solid var(--pri);
+    outline-offset: 2px;
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--ink3);
+  }
+}
+
+/* Self-hosted icon font (see scripts/build-icon-font.py). */
+@font-face {
+  font-family: "Material Symbols Rounded";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("/fonts/material-symbols-rounded.woff2") format("woff2");
+}
+.ms {
+  font-family: "Material Symbols Rounded";
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings: "FILL" 0;
+  user-select: none;
+}
+.ms.fill {
+  font-variation-settings: "FILL" 1;
+}
+
+.grad-text {
+  background: var(--grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes shimmer {
+  0% {
+    background-position: -600px 0;
+  }
+  100% {
+    background-position: 600px 0;
+  }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--surface2) 0%, var(--line) 40%, var(--surface2) 80%);
+  background-size: 1200px 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: 8px;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}

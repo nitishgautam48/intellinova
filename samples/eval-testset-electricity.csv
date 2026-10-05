@@ -1,0 +1,27 @@
+question,expected_answer,expected_locations,category,off_material
+What is electric current?,Electric current is the rate of flow of electric charge through a conductor; I = Q / t.,p. 1,Textbook page,no
+What is the SI unit of electric current?,"The ampere (A), which is one coulomb of charge flowing per second.",p. 1,Textbook page,no
+How is an ammeter connected in a circuit?,An ammeter is always connected in series with the part of the circuit whose current is measured.,p. 1,Textbook page,no
+Define potential difference between two points.,It is the work done to move a unit charge from one point to the other: V = W / Q.,p. 1,Textbook page,no
+How is a voltmeter connected?,A voltmeter is always connected in parallel across the two points.,p. 1,Textbook page,no
+What does one volt mean?,One volt is one joule of work done per coulomb of charge.,p. 1,Textbook page,no
+State Ohm's law.,"At constant temperature, the current through a metallic wire is directly proportional to the potential difference across its ends; V = IR.",p. 2,Textbook page,no
+A bulb draws 0.5 A from a 6 V battery. What is its resistance?,R = V / I = 6 / 0.5 = 12 ohm.,p. 2,Textbook page,no
+"If a 12 ohm bulb is connected to a 3 V battery, what current flows?",I = V / R = 3 / 12 = 0.25 A.,p. 2,Textbook page,no
+On what factors does the resistance of a conductor depend?,"Its length, its area of cross-section and the material it is made of.",p. 2,Textbook page,no
+How does resistance change with the length and thickness of a wire?,Resistance is directly proportional to length and inversely proportional to the area of cross-section (R = rho L / A).,p. 2,Textbook page,no
+Why do glass and rubber not conduct electricity well?,Insulators like glass and rubber have very high resistivity.,p. 2,Textbook page,no
+What is the equivalent resistance of resistors in series?,The sum of the individual resistances: Rs = R1 + R2 + R3.,p. 3,Textbook page,no
+"What is the equivalent resistance of 5 ohm, 10 ohm and 15 ohm resistors in series?",30 ohm.,p. 3,Textbook page,no
+What stays the same across resistors connected in parallel?,The potential difference across each resistor is the same.,p. 3,Textbook page,no
+How do you find the equivalent resistance of resistors in parallel?,Add the reciprocals: 1/Rp = 1/R1 + 1/R2 + 1/R3. It is always less than the smallest resistance.,p. 3,Textbook page,no
+Why are household appliances connected in parallel?,So each one gets the full supply voltage and can be switched on or off independently.,p. 3,Textbook page,no
+State Joule's law of heating.,"H = I^2 R t: heat produced is proportional to the square of the current, the resistance and the time.",p. 4,Textbook page,no
+What is a fuse and how does it protect a circuit?,A short wire of low melting point connected in series that melts and breaks the circuit when too much current flows.,p. 4,Textbook page,no
+Write the formulas for electric power.,P = V I = I^2 R = V^2 / R; the SI unit is the watt.,p. 4,Textbook page,no
+How many joules are there in one kilowatt hour?,1 kWh = 3.6 x 10^6 joules.,p. 4,Textbook page,no
+How many units does a 1000 W heater use in 2 hours?,"2 kWh, that is 2 units.",p. 4,Textbook page,no
+Who won the 2011 Cricket World Cup final?,,,Textbook page,yes
+What is the capital of Australia?,,,Textbook page,yes
+Recommend a good Bollywood movie to watch this weekend.,,,Textbook page,yes
+How do I reset my Instagram password?,,,Textbook page,yes
