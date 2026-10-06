@@ -5,14 +5,20 @@ import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { Drawer } from "@/components/ui/dialog";
-import { Button, CiteBadge, Empty, Icon, Loading, PageHead, Segmented, Spinner, Toggle } from "@/components/ui";
+import { Drawer, Modal } from "@/components/ui/dialog";
+import { Button, Checkbox, CiteBadge, Empty, Icon, Loading, PageHead, Segmented, Select, Spinner, Toggle } from "@/components/ui";
 import { api, PORTAL_HEADER, useApi } from "@/lib/api";
 import { canRecord, recordUtterance, type Capture } from "@/lib/voice";
 
 type Cite = { n: number; unit_id: string; source_title: string; source_type: string; icon: string; kind: string; location: string; excerpt: string };
-type Msg = { id: string; role: "user" | "assistant"; content: string; lang: string; citations: Cite[]; status: string; pending?: boolean };
-type Conv = { id: string; title: string; lang: string; source_only: boolean; updated: string; intake: boolean; greeting: string | null; messages?: Msg[] };
+type Msg = { id: string; role: "user" | "assistant"; content: string; lang: string; citations: Cite[]; status: string; pending?: boolean; searched?: string | null };
+type Scope = { kind: "all" | "subject" | "chapter" | "mine" | "sources"; id?: string; ids?: string[]; label: string };
+type Scopes = {
+  subjects: { id: string; name: string; chapters: { id: string; name: string }[] }[];
+  sources: { id: string; title: string; type: string; icon: string; mine: boolean; subject: string }[];
+};
+type Conv = { id: string; title: string; lang: string; source_only: boolean; updated: string; intake: boolean; greeting: string | null; scope?: Scope; messages?: Msg[] };
+const ALL: Scope = { kind: "all", label: "All my material" };
 type Sugg = { chapter: { id: string; name: string; subject: string } | null; prompts: string[]; sources: { icon: string; t: string; n: number }[]; units: number };
 type UnitCtx = {
   unit_id: string; title: string; type: string; icon: string; loc: string; kind: string; excerpt: string; topic: string | null; open_url: string | null;
@@ -46,8 +52,14 @@ function useSpeech(lang: string) {
   const [listening, setListening] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [level, setLevel] = useState(0);
-  const server = !!caps?.stt && canRecord();
-  const supported = server || !!SR_();
+  // Browser capabilities are only known after the first render; checking them during it made the server HTML
+  // (no mic button) differ from the browser's (mic button) and React threw a hydration error.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  const server = mounted && !!caps?.stt && canRecord();
+  const supported = mounted && (server || !!SR_());
 
   /** Records one spoken question and returns its text ("" if nothing was heard). */
   const capture = async (): Promise<string> => {
@@ -140,7 +152,20 @@ function withCites(text: string, sel: number | null, onPick: (n: number) => void
   });
 }
 
-function Answer({ m, sel, onPick, sourceOnly }: { m: Msg; sel: { msg: string; n: number } | null; onPick: (msg: string, n: number) => void; sourceOnly: boolean }) {
+function Widen({ m, onWiden }: { m: Msg; onWiden?: () => void }) {
+  if (!m.searched || !onWiden) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-[13px] text-ink2">
+      <Icon name="filter_alt" size={16} />
+      <span>
+        Only searched <strong className="text-ink">{m.searched}</strong>.
+      </span>
+      <button onClick={onWiden} className="border-0 bg-transparent p-0 font-bold text-pri-ink">Search all my material instead</button>
+    </div>
+  );
+}
+
+function Answer({ m, sel, onPick, sourceOnly, onWiden }: { m: Msg; sel: { msg: string; n: number } | null; onPick: (msg: string, n: number) => void; sourceOnly: boolean; onWiden?: () => void }) {
   const selN = sel?.msg === m.id ? sel.n : null;
   if (m.status === "declined") {
     return (
@@ -153,6 +178,7 @@ function Answer({ m, sel, onPick, sourceOnly }: { m: Msg; sel: { msg: string; n:
             <div className="font-bold text-warn-ink">Not covered in your material</div>
             <div className="mt-1 text-sm">{m.content}</div>
           </div>
+          <Widen m={m} onWiden={onWiden} />
         </div>
       </div>
     );
@@ -176,6 +202,7 @@ function Answer({ m, sel, onPick, sourceOnly }: { m: Msg; sel: { msg: string; n:
             <div className="mt-1.5 whitespace-pre-wrap text-sm leading-[1.65]">{m.content}</div>
             <div className="mt-2 text-xs text-ink2">Not cited, not used in quizzes. Check with your teacher before relying on it.</div>
           </div>
+          <Widen m={m} onWiden={onWiden} />
         </div>
       </div>
     );
@@ -335,6 +362,110 @@ export function SourceViewer({ unitId, n }: { unitId: string | null; n: number |
   );
 }
 
+function ScopePicker({ open, onOpenChange, value, onApply }: { open: boolean; onOpenChange: (v: boolean) => void; value: Scope; onApply: (s: Scope) => void }) {
+  const { data } = useApi<Scopes>(open ? "/api/tutor/scopes" : null);
+  const [kind, setKind] = useState<Scope["kind"]>(value.kind);
+  const [subject, setSubject] = useState("");
+  const [chapter, setChapter] = useState("");
+  const [files, setFiles] = useState<string[]>([]);
+  const [q, setQ] = useState("");
+  useEffect(() => {
+    if (!open) return;
+    setKind(value.kind);
+    setSubject(value.kind === "subject" ? value.id || "" : "");
+    setChapter(value.kind === "chapter" ? value.id || "" : "");
+    setFiles(value.kind === "sources" ? value.ids || [] : []);
+    setQ("");
+  }, [open, value]);
+  const subjects = data?.subjects || [];
+  const sources = data?.sources || [];
+  const mine = sources.filter((s) => s.mine);
+  const shown = sources.filter((s) => !q || `${s.title} ${s.subject} ${s.type}`.toLowerCase().includes(q.toLowerCase()));
+  const sub = subjects.find((x) => x.id === subject) || subjects[0];
+  const chapters = subjects.flatMap((x) => x.chapters.map((c) => ({ ...c, subject: x.name })));
+
+  const build = (): Scope | null => {
+    if (kind === "all") return ALL;
+    if (kind === "mine") return mine.length ? { kind, label: "My uploads" } : null;
+    if (kind === "subject") return sub ? { kind, id: sub.id, label: sub.name } : null;
+    if (kind === "chapter") {
+      const c = chapters.find((x) => x.id === chapter) || chapters[0];
+      return c ? { kind, id: c.id, label: `${c.subject} · ${c.name}` } : null;
+    }
+    return files.length ? { kind, ids: files, label: files.length === 1 ? sources.find((s) => s.id === files[0])?.title || "1 file" : `${files.length} files` } : null;
+  };
+  const choice = build();
+  const opt = (k: Scope["kind"], icon: string, title: string, sub2: string, disabled = false, extra?: React.ReactNode) => (
+    <div
+      className="rounded-xl border p-3"
+      style={{ borderColor: kind === k ? "var(--pri)" : "var(--line)", background: kind === k ? "var(--pri-soft)" : "var(--surface)", opacity: disabled ? 0.55 : 1 }}
+    >
+      <label className="flex cursor-pointer items-start gap-2.5">
+        <input type="radio" name="scope" checked={kind === k} disabled={disabled} onChange={() => setKind(k)} className="mt-1 accent-[var(--pri)]" />
+        <Icon name={icon} size={20} className="mt-px flex-none" />
+        <span className="min-w-0">
+          <span className="block font-semibold">{title}</span>
+          <span className="block text-xs text-ink2">{sub2}</span>
+        </span>
+      </label>
+      {kind === k && extra && <div className="mt-2.5 pl-[30px]">{extra}</div>}
+    </div>
+  );
+
+  return (
+    <Modal
+      open={open}
+      onOpenChange={onOpenChange}
+      title="What should the tutor answer from?"
+      sub="Narrow it to a subject, a chapter or particular files. You can change this any time; it applies from your next question."
+      width={600}
+      footer={
+        <>
+          <Button onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="primary" disabled={!choice} onClick={() => choice && onApply(choice)}>Use this</Button>
+        </>
+      }
+    >
+      {!data ? (
+        <Loading />
+      ) : (
+        <div className="flex flex-col gap-2">
+          {opt("all", "library_books", "All my material", "Everything your school has added, plus your own uploads")}
+          {opt("subject", "school", "One subject", subjects.length ? "Only material for the subject you pick" : "No subjects with material yet", !subjects.length,
+            <Select value={sub?.id || ""} onChange={(e) => setSubject(e.target.value)} aria-label="Subject">
+              {subjects.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            </Select>)}
+          {opt("chapter", "menu_book", "One chapter", chapters.length ? "Only material filed under, or tagged to, that chapter" : "No published chapters yet", !chapters.length,
+            <Select value={chapter || chapters[0]?.id || ""} onChange={(e) => setChapter(e.target.value)} aria-label="Chapter">
+              {subjects.map((x) => (
+                <optgroup key={x.id} label={x.name}>
+                  {x.chapters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </optgroup>
+              ))}
+            </Select>)}
+          {opt("mine", "upload_file", "Only my uploads", mine.length ? `${mine.length} file${mine.length === 1 ? "" : "s"} you added in Study AI` : "You haven't added material yet (Study AI › add your notes)", !mine.length)}
+          {opt("sources", "checklist", "Particular files", "Pick one or more textbooks, slide decks, videos or notes", !sources.length,
+            <div className="flex flex-col gap-1.5">
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter files" aria-label="Filter files" className="h-9 rounded-lg border border-line bg-surface px-3 text-[13px] outline-none" />
+              <div className="flex max-h-[220px] flex-col gap-0.5 overflow-auto">
+                {shown.map((s) => (
+                  <Checkbox key={s.id} checked={files.includes(s.id)} onChange={(v) => setFiles((f) => (v ? [...f, s.id] : f.filter((x) => x !== s.id)))}>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <Icon name={s.icon} size={16} className="flex-none text-ink2" />
+                      <span className="truncate">{s.title}</span>
+                      <span className="flex-none text-xs text-ink3">{s.mine ? "· yours" : s.subject ? `· ${s.subject}` : ""}</span>
+                    </span>
+                  </Checkbox>
+                ))}
+                {!shown.length && <span className="text-xs text-ink2">No files match.</span>}
+              </div>
+            </div>)}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 export function Tutor({ conversationId, initialQ }: { conversationId?: string; initialQ?: string }) {
   const router = useRouter();
   const { data: sugg } = useApi<Sugg>("/api/tutor/suggestions");
@@ -342,6 +473,8 @@ export function Tutor({ conversationId, initialQ }: { conversationId?: string; i
   const { data: history, mutate: mutateHist } = useApi<Conv[]>("/api/tutor/conversations");
   const [lang, setLang] = useState<string>("en");
   const [srcOnly, setSrcOnly] = useState(false);
+  const [scope, setScope] = useState<Scope>(ALL);
+  const [picking, setPicking] = useState(false);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [text, setText] = useState(initialQ || "");
   const [busy, setBusy] = useState(false);
@@ -357,6 +490,7 @@ export function Tutor({ conversationId, initialQ }: { conversationId?: string; i
       setMsgs(conv.messages || []);
       setLang(conv.lang);
       setSrcOnly(conv.source_only);
+      setScope(conv.scope || ALL);
       const last = [...(conv.messages || [])].reverse().find((m) => m.role === "assistant" && m.citations.length);
       if (last) setSel({ msg: last.id, n: 1 });
     }
@@ -371,7 +505,7 @@ export function Tutor({ conversationId, initialQ }: { conversationId?: string; i
 
   const ensureConv = async (): Promise<string> => {
     if (conversationId) return conversationId;
-    const c = await api.post<Conv>("/api/tutor/conversations", { lang, source_only: srcOnly });
+    const c = await api.post<Conv>("/api/tutor/conversations", { lang, source_only: srcOnly, scope });
     window.history.replaceState(null, "", `/app/tutor/${c.id}`);
     return c.id;
   };
@@ -409,6 +543,27 @@ export function Tutor({ conversationId, initialQ }: { conversationId?: string; i
     if (p.lang) setLang(p.lang);
     if (p.source_only !== undefined) setSrcOnly(p.source_only);
     if (cidRef.current) await api.patch(`/api/tutor/conversations/${cidRef.current}`, p).catch(() => {});
+  };
+
+  // What the tutor answers from (all material, a subject, a chapter, my uploads or chosen files). Applies from the next question.
+  const applyScope = async (next: Scope): Promise<boolean> => {
+    try {
+      if (cidRef.current) {
+        const c = await api.patch<Conv>(`/api/tutor/conversations/${cidRef.current}`, { scope: next });
+        setScope(c.scope || ALL);
+      } else {
+        setScope(next);
+      }
+      return true;
+    } catch (e) {
+      toast.error((e as Error).message);
+      return false;
+    }
+  };
+  const widen = async (answerId: string) => {
+    const i = msgs.findIndex((x) => x.id === answerId);
+    const q = [...msgs.slice(0, i)].reverse().find((x) => x.role === "user");
+    if ((await applyScope(ALL)) && q) await send(q.content);
   };
 
   // One spoken question; the answer is read aloud.
@@ -470,7 +625,6 @@ export function Tutor({ conversationId, initialQ }: { conversationId?: string; i
     if (window.innerWidth < 1100) setViewerOpen(true);
   };
 
-  const scope = sugg?.chapter ? `${sugg.chapter.subject} · ${sugg.chapter.name}` : "All your subjects";
   const greeting = conv?.greeting && !msgs.length ? conv.greeting : null;
 
   return (
@@ -496,7 +650,17 @@ export function Tutor({ conversationId, initialQ }: { conversationId?: string; i
       />
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface px-3.5 py-2.5 text-[13px]">
         <span className="text-ink2">Answering from</span>
-        {sugg?.sources.length ? (
+        <button
+          onClick={() => setPicking(true)}
+          aria-label="Choose what the tutor answers from"
+          className="flex h-8 items-center gap-1.5 rounded-lg border px-2.5 font-semibold"
+          style={{ borderColor: scope.kind === "all" ? "var(--line)" : "var(--pri)", background: scope.kind === "all" ? "var(--surface)" : "var(--pri-soft)", color: scope.kind === "all" ? "var(--ink)" : "var(--pri-ink)" }}
+        >
+          <Icon name={scope.kind === "all" ? "library_books" : "filter_alt"} size={16} />
+          <span className="max-w-[260px] truncate">{scope.label}</span>
+          <Icon name="expand_more" size={16} />
+        </button>
+        {scope.kind === "all" && (sugg?.sources.length ? (
           sugg.sources.map((x) => (
             <span key={x.t} className="flex items-center gap-1 rounded-lg bg-surface2 px-[9px] py-[3px] font-semibold">
               <Icon name={x.icon} size={15} />
@@ -505,10 +669,8 @@ export function Tutor({ conversationId, initialQ }: { conversationId?: string; i
           ))
         ) : (
           <span className="font-semibold">no class material yet</span>
-        )}
-        <span className="text-ink2">
-          · {scope} · {(sugg?.units || 0).toLocaleString("en-IN")} content units
-        </span>
+        ))}
+        {scope.kind === "all" && <span className="text-ink2">· {(sugg?.units || 0).toLocaleString("en-IN")} content units</span>}
         <Link href="/app/study" className="ml-auto font-semibold">
           Add your own material
         </Link>
@@ -537,7 +699,7 @@ export function Tutor({ conversationId, initialQ }: { conversationId?: string; i
                   {m.content}
                 </div>
               ) : (
-                <Answer key={m.id} m={m} sel={sel} onPick={pick} sourceOnly={srcOnly} />
+                <Answer key={m.id} m={m} sel={sel} onPick={pick} sourceOnly={srcOnly} onWiden={busy ? undefined : () => widen(m.id)} />
               ),
             )}
             {busy && (
@@ -619,6 +781,7 @@ export function Tutor({ conversationId, initialQ }: { conversationId?: string; i
         </div>
       </Drawer>
 
+      <ScopePicker open={picking} onOpenChange={setPicking} value={scope} onApply={async (s) => (await applyScope(s)) && setPicking(false)} />
       <Drawer open={histOpen} onOpenChange={setHistOpen} title="Your conversations" width={400}>
         {!history?.length ? (
           <div className="text-[13px] text-ink2">No conversations yet.</div>

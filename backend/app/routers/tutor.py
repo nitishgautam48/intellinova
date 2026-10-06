@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import ContentUnit, Conversation, KbSource, Message, StudentProfile, Topic, User
+from app.models import Chapter, ContentUnit, Conversation, KbSource, Message, StudentProfile, Subject, Topic, User
 from app.routers.common import get_or_404, rel_time, track
 from app.security import STAFF_ROLES, current_user, student_user
 from app.services import grounding, planner, retrieval, storage, stt, tts
@@ -20,10 +20,102 @@ from app.workers import tasks
 router = APIRouter(prefix="/api", tags=["tutor"])
 
 
+ALL = {"kind": "all", "label": "All my material"}
+
+
 def conv_out(c: Conversation) -> dict:
     return {"id": str(c.id), "title": c.title, "lang": c.lang, "source_only": c.source_only,
             "updated": rel_time(c.updated_at), "intake": bool((c.scope or {}).get("intake")),
-            "greeting": INTAKE if (c.scope or {}).get("intake") else None}
+            "greeting": INTAKE if (c.scope or {}).get("intake") else None,
+            "scope": (c.scope or {}).get("filter") or ALL}
+
+
+# --------------------------------------------------------------------------- what the tutor answers from
+
+class ScopeIn(BaseModel):
+    """all: everything the student can see · subject / chapter: one of them · mine: the student's own uploads ·
+    sources: specific files."""
+    kind: str = "all"
+    id: str | None = None
+    ids: list[str] = Field(default_factory=list, max_length=50)
+
+
+def _uuid(v: str | None) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(str(v))
+    except (TypeError, ValueError):
+        return None
+
+
+def _own_sources(db: Session, user: User) -> list[KbSource]:
+    return list(db.scalars(select(KbSource).where(KbSource.owner_id == user.id, KbSource.status.in_(retrieval.READY))))
+
+
+def clean_scope(db: Session, user: User, body: ScopeIn) -> dict:
+    """Validates a scope picked in the app and stores it with a readable label."""
+    if body.kind == "all":
+        return dict(ALL)
+    if body.kind == "subject":
+        sub = db.get(Subject, _uuid(body.id)) if _uuid(body.id) else None
+        if not sub:
+            raise HTTPException(400, "Choose a subject.")
+        return {"kind": "subject", "id": str(sub.id), "label": sub.name}
+    if body.kind == "chapter":
+        ch = db.get(Chapter, _uuid(body.id)) if _uuid(body.id) else None
+        if not ch or not ch.published or ch.disabled:
+            raise HTTPException(400, "Choose a chapter.")
+        return {"kind": "chapter", "id": str(ch.id), "label": f"{ch.subject.name} · {ch.name}"}
+    if body.kind == "mine":
+        if not _own_sources(db, user):
+            raise HTTPException(400, "You haven't added any material of your own yet. Add it in Study AI first.")
+        return {"kind": "mine", "label": "My uploads"}
+    if body.kind == "sources":
+        ids = [x for x in (_uuid(i) for i in body.ids) if x]
+        rows = list(db.scalars(select(KbSource).where(KbSource.id.in_(ids), retrieval.visible_sources_clause(user)))) if ids else []
+        if not rows:
+            raise HTTPException(400, "Choose at least one file.")
+        label = rows[0].title if len(rows) == 1 else f"{len(rows)} files"
+        return {"kind": "sources", "ids": [str(r.id) for r in rows], "label": label[:120]}
+    raise HTTPException(400, "Unknown choice.")
+
+
+def scope_args(db: Session, user: User, filt: dict | None) -> dict:
+    """grounding.answer() arguments for a stored scope. Anything no longer available falls back to all material."""
+    kind = (filt or {}).get("kind", "all")
+    if kind == "subject" and _uuid(filt.get("id")):
+        return {"subject_id": _uuid(filt["id"])}
+    if kind == "chapter" and _uuid(filt.get("id")):
+        return {"chapter_id": _uuid(filt["id"])}
+    if kind == "mine":
+        ids = [s.id for s in _own_sources(db, user)]
+        return {"source_ids": ids} if ids else {}
+    if kind == "sources":
+        ids = [x for x in (_uuid(i) for i in filt.get("ids", [])) if x]
+        visible = list(db.scalars(select(KbSource.id).where(KbSource.id.in_(ids), retrieval.visible_sources_clause(user)))) if ids else []
+        return {"source_ids": visible} if visible else {}
+    return {}
+
+
+@router.get("/tutor/scopes")
+def tutor_scopes(user: User = Depends(student_user), db: Session = Depends(get_db)):
+    """Everything a student can point the tutor at: their subjects and chapters, and every file they can see."""
+    prof = db.get(StudentProfile, user.id)
+    sources = list(db.scalars(select(KbSource).where(retrieval.visible_sources_clause(user))
+                              .order_by(KbSource.origin.desc(), KbSource.title).limit(300)))
+    subj_ids = set(prof.subject_ids or []) if prof else set()
+    subj_ids |= {s.subject_id for s in sources if s.subject_id}
+    subjects = list(db.scalars(select(Subject).where(Subject.id.in_(subj_ids)).order_by(Subject.name))) if subj_ids else []
+    names = {s.id: s.name for s in subjects}
+    out_subjects = []
+    for sub in subjects:
+        chs = [c for c in sorted(sub.chapters, key=lambda c: c.position) if c.published and not c.disabled]
+        out_subjects.append({"id": str(sub.id), "name": sub.name, "chapters": [{"id": str(c.id), "name": c.name} for c in chs]})
+    return {
+        "subjects": out_subjects,
+        "sources": [{"id": str(s.id), "title": s.title, "type": retrieval.SRC_TYPE.get(s.kind, ("Source", "description"))[0],
+                     "icon": retrieval.SRC_TYPE.get(s.kind, ("Source", "description"))[1], "mine": s.origin != "admin",
+                     "subject": names.get(s.subject_id, "")} for s in sources],
+    }
 
 
 def msg_out(m: Message) -> dict:
@@ -47,12 +139,15 @@ def list_convs(user: User = Depends(student_user), db: Session = Depends(get_db)
 class ConvIn(BaseModel):
     lang: str = "en"
     source_only: bool = False
+    scope: ScopeIn | None = None
 
 
 @router.post("/tutor/conversations")
 def new_conv(body: ConvIn, user: User = Depends(student_user), db: Session = Depends(get_db)):
     c = Conversation(user_id=user.id, lang=body.lang if body.lang in ("en", "hing", "hi") else "en",
                      source_only=body.source_only)
+    if body.scope and body.scope.kind != "all":
+        c.scope = {"filter": clean_scope(db, user, body.scope)}
     db.add(c)
     db.commit()
     return conv_out(c)
@@ -68,6 +163,7 @@ class ConvPatch(BaseModel):
     lang: str | None = None
     source_only: bool | None = None
     title: str | None = Field(None, max_length=300)
+    scope: ScopeIn | None = None
 
 
 @router.patch("/tutor/conversations/{cid}")
@@ -79,6 +175,8 @@ def patch_conv(cid: str, body: ConvPatch, user: User = Depends(student_user), db
         c.source_only = body.source_only
     if body.title:
         c.title = body.title
+    if body.scope is not None:  # takes effect from the next question
+        c.scope = {**(c.scope or {}), "filter": clean_scope(db, user, body.scope)}
     db.commit()
     return conv_out(c)
 
@@ -108,7 +206,8 @@ def ask(cid: str, body: AskIn, user: User = Depends(student_user), db: Session =
         c.title = body.content.strip()[:80]
     db.commit()
     try:
-        res = grounding.answer(db, user, body.content.strip(), history, c.lang, c.source_only)
+        filt = (c.scope or {}).get("filter") or ALL
+        res = grounding.answer(db, user, body.content.strip(), history, c.lang, c.source_only, **scope_args(db, user, filt))
     except LLMError as e:
         raise HTTPException(503, str(e)) from e
     am = Message(conversation_id=c.id, role="assistant", content=res["content"], lang=c.lang,
@@ -130,7 +229,8 @@ def ask(cid: str, body: AskIn, user: User = Depends(student_user), db: Session =
             tasks.chat_evidence.delay(str(um.id))
         except Exception:  # noqa: BLE001 - evidence is best-effort
             pass
-    return {"user": msg_out(um), "assistant": msg_out(am)}
+    narrowed = filt.get("kind", "all") != "all"
+    return {"user": msg_out(um), "assistant": {**msg_out(am), "searched": filt["label"] if narrowed else None}}
 
 
 @router.get("/tutor/suggestions")
@@ -213,7 +313,11 @@ def unit_context(uid: str, user: User = Depends(current_user), db: Session = Dep
         out["open_url"] = f"https://www.youtube.com/watch?v={vid}&t={int(u.t_start)}s" if vid else vurl
         out["time"] = fmt_ts(u.t_start)
     elif src.file_path:
-        frag = f"#page={u.page}" if u.page else (f"#page={u.slide}" if u.slide and src.file_path.endswith(".pdf") else "")
+        if u.t_start is not None:  # uploaded lecture video: the browser's player starts at that second
+            frag = f"#t={int(u.t_start)}"
+            out["time"] = fmt_ts(u.t_start)
+        else:
+            frag = f"#page={u.page}" if u.page else (f"#page={u.slide}" if u.slide and src.file_path.endswith(".pdf") else "")
         out["open_url"] = f"/api/sources/{src.id}/file{frag}"
     return out
 
@@ -228,7 +332,7 @@ def unit_image(uid: str, user: User = Depends(current_user), db: Session = Depen
 
 
 @router.get("/sources/{sid}/file")
-def source_file(sid: str, user: User = Depends(student_user), db: Session = Depends(get_db)):
+def source_file(sid: str, user: User = Depends(current_user), db: Session = Depends(get_db)):  # also opened from the admin KB viewer
     src = get_or_404(db, KbSource, sid, "source")
     if not _can_see(user, src) or not src.file_path:
         raise HTTPException(404)

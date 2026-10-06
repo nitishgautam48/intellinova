@@ -11,7 +11,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import ContentUnit, KbSource, User
+from app.models import ContentUnit, KbSource, Topic, User
 from app.services import embeddings
 
 log = logging.getLogger(__name__)
@@ -66,6 +66,7 @@ def search(
     subject_id: uuid.UUID | None = None,
     topic_ids: list[uuid.UUID] | None = None,
     source_ids: list[uuid.UUID] | None = None,
+    chapter_id: uuid.UUID | None = None,
 ) -> list[Hit]:
     k = k or settings.retrieval_k
     qv = embeddings.embed_one(query, "query")
@@ -78,6 +79,9 @@ def search(
         base = base.where(or_(KbSource.subject_id == subject_id, KbSource.subject_id.is_(None)))
     if topic_ids:
         base = base.where(or_(ContentUnit.topic_id.in_(topic_ids), ContentUnit.prereq_topic_ids.overlap(topic_ids)))
+    if chapter_id:  # material filed under the chapter, or tagged to one of its topics
+        base = base.where(or_(KbSource.chapter_id == chapter_id,
+                              ContentUnit.topic_id.in_(select(Topic.id).where(Topic.chapter_id == chapter_id))))
 
     dist = ContentUnit.embedding.cosine_distance(qv)
     vec_rows = db.execute(base.add_columns(dist.label("d")).where(ContentUnit.embedding.is_not(None))

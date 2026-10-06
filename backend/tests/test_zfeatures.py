@@ -510,3 +510,85 @@ def test_admin_and_student_signed_in_side_by_side(admin, stamp):
     old.cookies.set("inn_rt", old.cookies.get("inn_art"), path="/api/auth")
     assert old.post("/api/auth/refresh", headers=S).status_code == 401 and "inn_s" not in old.cookies
     assert r.status_code == 200
+
+
+def test_citations_open_at_the_exact_place(admin, stamp):
+    """Opening a citation's original: PDF pages and uploaded-video moments, from both apps."""
+    import uuid
+
+    from app.db import SessionLocal
+    from app.models import ContentUnit, KbSource
+    from app.services import storage
+
+    path = storage.save_bytes(b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 64, ".mp4", "sources")
+    with SessionLocal() as db:
+        src = KbSource(kind="video", title="Lecture 3", origin="admin", status="Ready", file_path=path, mime="video/mp4",
+                       subject_id=uuid.UUID(F["subject"]))
+        db.add(src)
+        db.flush()
+        u = ContentUnit(source_id=src.id, kind="Slide", text="Bulbs are filled with nitrogen and argon.", location="00:32",
+                        t_start=32.0, position=0)
+        db.add(u)
+        db.commit()
+        uid, sid = str(u.id), str(src.id)
+    for client in (F["student"], admin):
+        v = ok(client.get(f"/api/units/{uid}"))
+        assert v["open_url"] == f"/api/sources/{sid}/file#t=32" and v["time"] == "00:32"
+        r = client.get(f"/api/sources/{sid}/file")
+        assert r.status_code == 200 and r.headers["content-type"].startswith("video/")
+
+
+def test_tutor_answers_from_the_material_the_student_picks(admin, stamp):
+    """Ask Tutor scope: all material, one subject, one chapter, my uploads, or particular files."""
+    from sqlalchemy import select
+
+    from app.db import SessionLocal
+    from app.models import KbSource
+
+    c = F["student"]
+    opts = ok(c.get("/api/tutor/scopes"))
+    sub = next(s for s in opts["subjects"] if s["id"] == F["subject"])
+    assert any(ch["id"] == F["chapter"] for ch in sub["chapters"])
+    magnet = next(s for s in opts["sources"] if s["title"] == "Magnetism notes")
+    with SessionLocal() as db:
+        other = db.scalar(select(KbSource).where(KbSource.origin == "admin", KbSource.id != magnet["id"],
+                                                 KbSource.status.in_(("Ready", "Needs Review"))))
+    assert other is not None
+    q = {"content": "What do magnetic field lines never do?"}
+
+    # A chapter: answered from that chapter's material; the choice is saved on the conversation.
+    conv = ok(c.post("/api/tutor/conversations", json={"source_only": True, "scope": {"kind": "chapter", "id": F["chapter"]}}))
+    assert conv["scope"]["kind"] == "chapter" and "Magnetic Effects of Current" in conv["scope"]["label"]
+    r = ok(c.post(f"/api/tutor/conversations/{conv['id']}/messages", json=q))["assistant"]
+    assert r["status"] == "answered" and r["searched"] == conv["scope"]["label"]
+    assert all(ci["source_title"] == "Magnetism notes" for ci in r["citations"])
+
+    # Switch mid-conversation to a file that doesn't cover it: declined, and the reply says what was searched.
+    p = ok(c.patch(f"/api/tutor/conversations/{conv['id']}", json={"scope": {"kind": "sources", "ids": [str(other.id)]}}))
+    assert p["scope"] == {"kind": "sources", "ids": [str(other.id)], "label": other.title}
+    r = ok(c.post(f"/api/tutor/conversations/{conv['id']}/messages", json=q))["assistant"]
+    assert r["status"] == "declined" and r["searched"] == other.title
+    assert ok(c.get(f"/api/tutor/conversations/{conv['id']}"))["scope"]["kind"] == "sources"
+
+    # Back to everything.
+    p = ok(c.patch(f"/api/tutor/conversations/{conv['id']}", json={"scope": {"kind": "all"}}))
+    assert p["scope"] == {"kind": "all", "label": "All my material"}
+    r = ok(c.post(f"/api/tutor/conversations/{conv['id']}/messages", json=q))["assistant"]
+    assert r["status"] == "answered" and r["searched"] is None
+
+    # A subject works too.
+    p = ok(c.patch(f"/api/tutor/conversations/{conv['id']}", json={"scope": {"kind": "subject", "id": F["subject"]}}))
+    assert p["scope"]["label"] == sub["name"]
+
+    # Invalid choices are refused: no uploads of their own yet, unknown ids, another student's private file.
+    assert c.patch(f"/api/tutor/conversations/{conv['id']}", json={"scope": {"kind": "mine"}}).status_code in (200, 400)
+    assert c.patch(f"/api/tutor/conversations/{conv['id']}", json={"scope": {"kind": "chapter", "id": "nope"}}).status_code == 400
+    assert c.patch(f"/api/tutor/conversations/{conv['id']}", json={"scope": {"kind": "bogus"}}).status_code == 400
+    with SessionLocal() as db:
+        private = KbSource(kind="text", title=f"Someone else's notes {stamp}", origin="student", owner_id=None, status="Ready")
+        db.add(private)
+        db.commit()
+        pid = str(private.id)
+    r = c.patch(f"/api/tutor/conversations/{conv['id']}", json={"scope": {"kind": "sources", "ids": [pid]}})
+    assert r.status_code == 400
+    assert pid not in {s["id"] for s in ok(c.get("/api/tutor/scopes"))["sources"]}

@@ -1,1 +1,1 @@
-intellinova 2026-10-05 fix-7 (separate student/admin sessions, email-code fixes)
+intellinova 2026-10-05 fix-9 (Ask Tutor source picker; video citations open at the moment; hydration fix)

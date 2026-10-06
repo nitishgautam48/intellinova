@@ -85,11 +85,13 @@ def answer(
     source_only: bool = False,
     subject_id: uuid.UUID | None = None,
     source_ids: list[uuid.UUID] | None = None,
+    chapter_id: uuid.UUID | None = None,
 ) -> dict:
-    """Returns {content, citations, status: answered|declined|outside, support}."""
+    """Returns {content, citations, status: answered|declined|outside, support}. subject_id / chapter_id /
+    source_ids narrow the search to the material the student picked."""
     lang = lang if lang in LANG_NOTE else "en"
     query = standalone_query(question, history)
-    hits = retrieval.search(db, query, user, subject_id=subject_id, source_ids=source_ids)
+    hits = retrieval.search(db, query, user, subject_id=subject_id, source_ids=source_ids, chapter_id=chapter_id)
 
     if hits:
         numbered = {i + 1: h for i, h in enumerate(hits)}
