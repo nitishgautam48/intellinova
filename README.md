@@ -3,7 +3,7 @@
 An AI study partner for school students, and the admin console that keeps it accurate.
 
 - **Student app** (`/app`):
-  - **Tutor.** Questions are answered only from class material, with a citation on every point that opens the exact page, slide, figure or video moment. You can type or talk: hands-free voice mode listens, answers aloud and listens again, with speech recognised on your own server by Whisper. Students choose what the tutor answers from (all their material, one subject, one chapter, only their own uploads, or particular files) and can change it mid-conversation.
+  - **Tutor.** Answers come from class material, with a citation on every point that opens the exact page, slide, figure or video moment. When the material doesn't cover a question, the tutor says so; with *Sources only* off it adds a short general answer, clearly labelled as outside the material. You can type or talk: hands-free voice mode listens, answers aloud and listens again, with speech recognised on your own server by Whisper. Students choose what the tutor answers from (all their material, one subject, one chapter, only their own uploads, or particular files) and can change it mid-conversation.
   - **Practice.** Adaptive practice and mock exams.
   - **Study AI.** Notes, flashcards, concept maps, audio briefs and a downloadable slide deck from a lecture, PDF, slides or pasted text. One-click **revision packs** do the same for your weak topics, built from class material.
   - **Course flow map.** Every topic in teaching order with its prerequisite arrows, coloured by your mastery.

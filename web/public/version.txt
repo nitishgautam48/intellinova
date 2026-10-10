@@ -1,1 +1,1 @@
-intellinova 2026-10-05 fix-9 (Ask Tutor source picker; video citations open at the moment; hydration fix)
+intellinova 2026-10-10 fix-10 (accurate taglines: cited answers from your material, anything else labelled)

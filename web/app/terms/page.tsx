@@ -15,7 +15,7 @@ export default function Terms() {
         <li>Don&apos;t use IntelliNova to cheat in graded assessments, harass others or upload harmful content.</li>
       </ul>
       <h2>About AI answers</h2>
-      <p>IntelliNova links every answer to the material it came from and tells you when your material doesn&apos;t cover a question. It can still make mistakes. Check important facts against your textbook, and use the flag button to report anything wrong so the content team can fix it.</p>
+      <p>IntelliNova links its answers to the material they came from, labels anything that isn&apos;t from your material, and tells you when your material doesn&apos;t cover a question. It can still make mistakes. Check important facts against your textbook, and use the flag button to report anything wrong so the content team can fix it.</p>
       <h2>Exam and career information</h2>
       <p>Exam patterns, dates and eligibility rules are shown with their official source and the date they were last verified. Always confirm on the official website before applying.</p>
       <h2>Your content</h2>

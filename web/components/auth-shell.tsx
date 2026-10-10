@@ -32,7 +32,7 @@ export function AuthShell({ children, variant = "student" }: { children: React.R
           <Logo />
         </Link>
         <div className="mt-auto font-display text-[30px] font-semibold leading-[1.15] tracking-[-0.02em] [text-wrap:balance]">
-          {variant === "admin" ? "The admin console for keeping IntelliNova accurate." : "Study from your own class material, with every answer linked to its source."}
+          {variant === "admin" ? "The admin console for keeping IntelliNova accurate." : "Your class material, turned into a tutor that shows its work."}
         </div>
         <div className="flex flex-col gap-3.5">
           {points.map(([icon, text]) => (
@@ -47,7 +47,7 @@ export function AuthShell({ children, variant = "student" }: { children: React.R
         {variant === "student" && (
           <div className="flex flex-col gap-2.5 rounded-[14px] border border-side2 p-3.5" style={{ background: "color-mix(in oklch,var(--side2) 60%,transparent)" }}>
             <div className="text-[13px] leading-relaxed">
-              Every answer points to the page, slide or video moment it came from{" "}
+              Cited answers point to the page, slide or video moment they came from{" "}
               <span className="inline-grid h-[17px] min-w-[18px] place-items-center rounded-[5px] bg-pri px-1 align-[1px] font-mono text-[10px] font-semibold text-on-pri">1</span>
             </div>
             <div className="flex flex-wrap gap-1.5">

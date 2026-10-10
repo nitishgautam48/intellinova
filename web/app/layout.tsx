@@ -12,7 +12,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: { default: "IntelliNova — your AI study partner", template: "%s · IntelliNova" },
   description:
-    "Turn your class material into a tutor that shows its work. Ask doubts, take adaptive quizzes and revise, with every answer linked to the page, slide or moment it came from.",
+    "Turn your class material into a tutor that shows its work. Ask doubts, take adaptive quizzes and revise, with answers linked to the page, slide or moment they came from.",
   manifest: "/manifest.json",
   applicationName: "IntelliNova",
   appleWebApp: { capable: true, title: "IntelliNova", statusBarStyle: "black-translucent" },

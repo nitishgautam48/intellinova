@@ -689,7 +689,7 @@ export function Tutor({ conversationId, initialQ }: { conversationId?: string; i
             )}
             {!msgs.length && !greeting && !conversationId && (
               <Empty icon="forum" title="Ask your first question" className="my-auto border-0">
-                Answers come only from your class material, with a numbered source for every point. If your material doesn&apos;t cover something, the tutor says so instead of guessing.
+                Answers are built from your class material, with a numbered source for every point. If your material doesn&apos;t cover something, the tutor tells you. Turn on <strong>Sources only</strong> to stop there, or leave it off for a short general explanation, clearly labelled as outside your material.
               </Empty>
             )}
             {conversationId && !conv && <Loading />}

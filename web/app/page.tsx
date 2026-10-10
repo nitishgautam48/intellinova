@@ -34,7 +34,7 @@ const STAGES: [string, string, string, string[]][] = [
 ];
 const FEATURES = [
   ["link", "Nothing made up", "If it tells you something, you can see where it came from."],
-  ["report", "Says when it doesn’t know", "If your notes don’t cover a question, it tells you instead of guessing."],
+  ["report", "Says when it doesn’t know", "If your notes don’t cover a question, it says so. Anything from outside them is clearly labelled, never mixed in."],
   ["image_search", "Understands diagrams", "Circuit diagrams, graphs and tables become part of the answer."],
   ["rule", "Questions you can rely on", "Every answer key is double-checked, and you won’t get the same question twice."],
   ["psychology", "Gets to know you", "The more you practise, the better it knows what to show you next."],
