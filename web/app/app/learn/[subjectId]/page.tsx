@@ -7,7 +7,7 @@ import { use, useState } from "react";
 import { FlowMap, type FlowMapT } from "@/components/flow-map";
 import { Chip, Empty, ErrorState, Icon, LinkButton, Loading, PageHead, Pill, Segmented } from "@/components/ui";
 import { useApi } from "@/lib/api";
-import { toneOf } from "@/lib/utils";
+import { plural, toneOf } from "@/lib/utils";
 
 type Subject = {
   id: string; name: string; board: string; class_level: string; pct: number;
@@ -36,7 +36,7 @@ export default function SubjectPage({ params }: { params: Promise<{ subjectId: s
       </div>
       <PageHead
         title={s.name}
-        sub={`${s.chapters.length} chapters · ${done} of ${total} topics · ${s.pct}% complete`}
+        sub={`${plural(s.chapters.length, "chapter")} · ${done} of ${total} topics · ${s.pct}% complete`}
         right={
           <>
             <Segmented value={view} onChange={setView} options={[{ v: "list", l: "Chapters" }, { v: "map", l: "Flow map" }]} />

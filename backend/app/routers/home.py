@@ -78,7 +78,7 @@ def dashboard(user: User = Depends(student_user), db: Session = Depends(get_db))
         raise HTTPException(409, "Finish setting up your profile first.")
     subs = planner.student_subjects(db, prof)
     chips = [x for x in [f"Class {class_num(prof.class_level)}" if prof.class_level else "", prof.board,
-                         f"{len(subs)} subjects" if subs else "", " · ".join(prof.languages[:2])] if x]
+                         f"{len(subs)} subject{'' if len(subs) == 1 else 's'}" if subs else "", " · ".join(prof.languages[:2])] if x]
 
     cont = None
     ch = planner.current_chapter(db, user.id, prof)
@@ -249,7 +249,7 @@ def progress(user: User = Depends(student_user), db: Session = Depends(get_db)):
 
     return {
         "stats": [
-            {"v": f"{overall}%", "l": "Overall progress", "s": f"Across {len(subs)} subjects"},
+            {"v": f"{overall}%", "l": "Overall progress", "s": f"Across {len(subs)} subject{'' if len(subs) == 1 else 's'}"},
             {"v": dur_label(round(week_mins)), "l": "Learning time", "s": "This week"},
             {"v": str(res_done), "l": "Resources completed", "s": "This month"},
             {"v": str(notes_n), "l": "Notes generated", "s": "This month"},

@@ -1,1 +1,1 @@
-intellinova 2026-10-10 fix-10 (accurate taglines: cited answers from your material, anything else labelled)
+intellinova 2026-10-10 fix-11 (singular/plural labels, mobile Today's plan heading)

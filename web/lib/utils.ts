@@ -53,3 +53,5 @@ export const toneOf = (label: string, fallback: Tone = "mute"): Tone => STATUS_T
 export const f2 = (v: number | null | undefined) => (v === null || v === undefined ? "—" : v.toFixed(2));
 
 export const pct = (v: number) => `${Math.round(v * 100)}%`;
+
+export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;

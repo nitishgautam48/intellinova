@@ -7,7 +7,7 @@ import { RevisionPackButton } from "@/components/revision-pack";
 import { Card, ErrorState, Icon, LinkButton, Loading, PageHead, Pill, Select } from "@/components/ui";
 import { useApi } from "@/lib/api";
 import { linkFor } from "@/lib/links";
-import { toneOf, type Tone } from "@/lib/utils";
+import { plural, toneOf, type Tone } from "@/lib/utils";
 
 type Progress = {
   stats: { v: string; l: string; s: string }[];
@@ -62,7 +62,7 @@ function ForgettingCurve({ topicId }: { topicId: string | null }) {
           <span className="h-2.5 w-2.5 rounded-full bg-pri" />
           Review done
         </span>
-        {c.next !== null && <span>Next review in {Math.max(0, Math.round(c.next - c.today))} days</span>}
+        {c.next !== null && <span>Next review in {plural(Math.max(0, Math.round(c.next - c.today)), "day")}</span>}
       </div>
     </>
   );

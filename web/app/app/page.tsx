@@ -138,13 +138,13 @@ export default function Dashboard() {
             <CardTitle
               sub={d.tasks.length ? `${d.tasks_left} left · about ${d.tasks_minutes} min in total` : "Built each morning from your chapter, revision dates and weak topics."}
               right={
-                <Link href="/app/plan" className="flex items-center gap-1 whitespace-nowrap text-[13px] font-semibold">
+                <Link href="/app/plan" className="flex items-center gap-1 text-right text-[13px] font-semibold">
                   <Icon name="event" size={16} />
                   {d.plan ? `${d.plan.title} · ${d.plan.days_left} day${d.plan.days_left === 1 ? "" : "s"} left` : "Set an exam date"}
                 </Link>
               }
             >
-              Today&apos;s plan
+              <span className="whitespace-nowrap">Today&apos;s plan</span>
             </CardTitle>
             {d.tasks.length === 0 ? (
               <div className="border-t border-line py-4 text-[13px] text-ink2">Nothing planned yet. Start a chapter or take a quiz and your plan fills in.</div>

@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { Empty, ErrorState, Icon, LinkButton, PageHead, Skeleton } from "@/components/ui";
 import { useApi } from "@/lib/api";
+import { plural } from "@/lib/utils";
 
 type Subj = { id: string; name: string; icon: string; tone: string; chapters: number; pct: number; next: string };
 type Profile = { board: string; class_level: string };
@@ -47,7 +48,7 @@ export default function Learn() {
               </div>
               <div>
                 <div className="font-display text-lg font-semibold">{x.name}</div>
-                <div className="text-[13px] text-ink2">{x.chapters} chapters</div>
+                <div className="text-[13px] text-ink2">{plural(x.chapters, "chapter")}</div>
               </div>
               <div className="h-1.5 rounded-[3px] bg-surface2">
                 <div className="h-full rounded-[3px]" style={{ width: `${x.pct}%`, background: `var(--${x.tone})` }} />
