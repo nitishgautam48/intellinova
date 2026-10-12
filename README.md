@@ -82,6 +82,8 @@ Staff see every search in **Resources › Search log** (found → passed filters
 
 Get a free YouTube Data API key (Google Cloud Console → YouTube Data API v3) for the best results. Without one, yt-dlp is used, which has no quota but depends on YouTube's public pages.
 
+If a YouTube link fails with **"Sign in to confirm you're not a bot"**, YouTube is limiting the automatic reader on your internet connection. Videos with captions still work (the title comes from YouTube's public oEmbed and the words from the captions); only videos without captions need their audio downloaded. Wait a few hours and press Retry, upload the video file instead, or add a YouTube cookies file as described in [infra/youtube/README.md](infra/youtube/README.md).
+
 ### First content, in order
 
 1. **Curriculum:** add a subject (board, class, subject), its chapters and topics, and prerequisites, then **Publish**. Students only see published chapters.

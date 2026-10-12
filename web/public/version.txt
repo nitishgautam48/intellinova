@@ -1,1 +1,1 @@
-intellinova 2026-10-10 fix-11 (singular/plural labels, mobile Today's plan heading)
+intellinova 2026-10-12 fix-13 (tutor goes first when the AI is busy, figure budget, one background job at a time, stuck quizzes stop and can be retried, YouTube bot-check fallback)

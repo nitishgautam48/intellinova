@@ -24,7 +24,7 @@ type Summary = {
   misconceptions: { t: string; ev: string; loc: string; unit_id: string | null }[];
   review: { n: string; grade: string; t: string; topic: string; loc: string; type: string }[];
 };
-type Quiz = { id: string; title: string; mode: string; status: string; error: string; n: number; items: Item[]; current: number; time_left: number | null; summary: Summary | null };
+type Quiz = { id: string; title: string; mode: string; status: string; error: string; n: number; items: Item[]; current: number; time_left: number | null; summary: Summary | null; preparing_s?: number | null; retryable?: boolean };
 
 const RT: Record<string, [string, string, Tone]> = {
   correct: ["check_circle", "Correct", "ok"],
@@ -36,7 +36,32 @@ const TONE_BG: Record<Tone, [string, string]> = {
   pri: ["var(--pri-soft)", "var(--pri-ink)"], teal: ["var(--teal-soft)", "var(--teal-ink)"], mute: ["var(--surface2)", "var(--ink2)"],
 };
 
-function Preparing({ q }: { q: Quiz }) {
+const SLOW_AFTER_S = 180;
+const fmtWait = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+
+function Preparing({ q, onChange }: { q: Quiz; onChange: () => void }) {
+  // Count up locally between polls so the wait time moves every second.
+  const [secs, setSecs] = useState(q.preparing_s ?? 0);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    setSecs(q.preparing_s ?? 0);
+  }, [q.preparing_s]);
+  useEffect(() => {
+    const t = setInterval(() => setSecs((x) => x + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const cancel = async () => {
+    setBusy(true);
+    try {
+      await api.post(`/api/practice/quizzes/${q.id}/cancel`);
+      onChange();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const slow = secs >= SLOW_AFTER_S;
   return (
     <div className="mx-auto flex max-w-[640px] flex-col items-center gap-4 py-16 text-center">
       <span className="grid h-14 w-14 place-items-center rounded-2xl bg-pri-soft text-pri">
@@ -45,6 +70,42 @@ function Preparing({ q }: { q: Quiz }) {
       <div className="font-display text-2xl font-semibold">Preparing your {q.mode === "Diagnostic" ? "diagnostic" : "questions"}</div>
       <div className="max-w-[48ch] text-ink2">
         Writing questions from your class material, checking every answer key with a solver and a second model, and removing near-duplicates. This can take a minute the first time a topic is practised.
+      </div>
+      <div className="font-mono text-[13px] text-ink3">Waiting {fmtWait(secs)}</div>
+      {slow && (
+        <Alert tone="warn" icon="hourglass_top" className="text-left">
+          This is taking longer than usual. The AI is probably busy with other work, such as a textbook being processed. You can keep waiting
+          (it stops automatically after 15 minutes), or cancel and try again later; questions already written are kept.
+        </Alert>
+      )}
+      <div className="flex flex-wrap justify-center gap-2">
+        {slow && <Button onClick={cancel} loading={busy} icon="close">Cancel</Button>}
+        <LinkButton href="/app" variant={slow ? "ghost" : undefined}>Do something else meanwhile</LinkButton>
+      </div>
+    </div>
+  );
+}
+
+function Failed({ q, onChange }: { q: Quiz; onChange: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const retry = async () => {
+    setBusy(true);
+    try {
+      await api.post(`/api/practice/quizzes/${q.id}/retry`);
+      onChange();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="mx-auto flex max-w-[560px] flex-col gap-4 py-10">
+      <Alert>{q.error || "This quiz couldn't be prepared."}</Alert>
+      <div className="flex flex-wrap items-center gap-2">
+        {q.retryable && <Button variant="primary" icon="refresh" loading={busy} onClick={retry}>Try again</Button>}
+        <LinkButton href="/app/practice">Back to Practice</LinkButton>
+        <Link href="/app/tutor" className="self-center font-semibold">Ask the tutor instead</Link>
       </div>
     </div>
   );
@@ -415,17 +476,8 @@ export default function QuizPage({ params }: { params: Promise<{ quizId: string 
   });
   if (error) return <ErrorState error={error} retry={() => mutate()} />;
   if (!q) return <Loading />;
-  if (q.status === "preparing") return <Preparing q={q} />;
-  if (q.status === "failed")
-    return (
-      <div className="mx-auto flex max-w-[560px] flex-col gap-4 py-10">
-        <Alert>{q.error || "This quiz couldn't be prepared."}</Alert>
-        <div className="flex gap-2">
-          <LinkButton href="/app/practice">Back to Practice</LinkButton>
-          <Link href="/app/tutor" className="self-center font-semibold">Ask the tutor instead</Link>
-        </div>
-      </div>
-    );
+  if (q.status === "preparing") return <Preparing q={q} onChange={() => mutate()} />;
+  if (q.status === "failed") return <Failed q={q} onChange={() => mutate()} />;
   if (q.status === "completed" && q.summary) return <Report q={q} />;
   return <Taking q={q} mutate={() => mutate()} />;
 }

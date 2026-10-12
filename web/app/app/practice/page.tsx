@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { refreshJobs } from "@/components/jobs";
 import { Button, Card, Chip, Empty, ErrorState, Icon, LinkButton, Loading, PageHead, Segmented } from "@/components/ui";
 import { api, useApi } from "@/lib/api";
+import { usePersistentState } from "@/lib/persist";
 
 type Setup = {
   chapters: { id: string; name: string; subject: string; topics: { id: string; name: string; mastery: number | null }[] }[];
@@ -21,24 +23,39 @@ function Builder() {
   const router = useRouter();
   const params = useSearchParams();
   const { data: s, error, mutate } = useApi<Setup>("/api/practice/setup");
-  const [mode, setMode] = useState<"Quiz" | "Mock exam">("Quiz");
-  const [chapter, setChapter] = useState<string | null>(null);
-  const [sel, setSel] = useState<Set<string>>(new Set());
-  const [types, setTypes] = useState<string[]>([...TYPES]);
-  const [diff, setDiff] = useState("Adaptive");
-  const [n, setN] = useState(5);
+  const [mode, setMode] = usePersistentState<"Quiz" | "Mock exam">("practice.mode", "Quiz");
+  // Your picks are remembered while you move around the app (until you log out).
+  const [chapter, setChapter, ready] = usePersistentState<string | null>("practice.chapter", null);
+  const [selList, setSelList] = usePersistentState<string[]>("practice.sel", []);
+  const sel = useMemo(() => new Set(selList), [selList]);
+  const setSel = (v: Set<string> | ((prev: Set<string>) => Set<string>)) =>
+    setSelList((prev) => [...(typeof v === "function" ? v(new Set(prev)) : v)]);
+  const [types, setTypes] = usePersistentState<string[]>("practice.types", [...TYPES]);
+  const [diff, setDiff] = usePersistentState("practice.diff", "Adaptive");
+  const [n, setN] = usePersistentState("practice.n", 5);
   const [busy, setBusy] = useState(false);
+  const usedPre = useRef(false);
 
   useEffect(() => {
-    if (!s || chapter) return;
+    if (!s || !ready) return;
     const pre = (params.get("topics") || "").split(",").filter(Boolean);
-    const withPre = pre.length ? s.chapters.find((c) => c.topics.some((t) => pre.includes(t.id))) : null;
-    const ch = withPre || s.chapters.find((c) => c.id === s.current_chapter_id) || s.chapters[0];
+    if (pre.length && !usedPre.current) {
+      // Arriving from "Practise weak topics" etc.: those topics win over what was picked before.
+      usedPre.current = true;
+      const ch = s.chapters.find((c) => c.topics.some((t) => pre.includes(t.id)));
+      if (ch) {
+        setChapter(ch.id);
+        setSelList(pre);
+        return;
+      }
+    }
+    if (chapter && s.chapters.some((c) => c.id === chapter)) return;
+    const ch = s.chapters.find((c) => c.id === s.current_chapter_id) || s.chapters[0];
     if (ch) {
       setChapter(ch.id);
-      setSel(new Set(pre.length ? pre : ch.topics.map((t) => t.id)));
+      setSelList(ch.topics.map((t) => t.id));
     }
-  }, [s, chapter, params]);
+  }, [s, chapter, params, ready, setChapter, setSelList]);
 
   const cur = useMemo(() => s?.chapters.find((c) => c.id === chapter), [s, chapter]);
   if (error) return <ErrorState error={error} retry={() => mutate()} />;
@@ -50,7 +67,9 @@ function Builder() {
     setBusy(true);
     try {
       const q = await api.post<{ id: string }>("/api/practice/quizzes", { topic_ids: [...sel], types, difficulty: diff, n, mode });
-      router.push(`/app/practice/${q.id}`);
+      refreshJobs();
+      if (window.location.pathname === "/app/practice") router.push(`/app/practice/${q.id}`);
+      else toast.success("Your quiz is being prepared. You'll get a notice when it's ready.");
     } catch (e) {
       toast.error((e as Error).message);
       setBusy(false);

@@ -4,10 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { FilterChips, Kicker, Panel, StageDots, StatCard, StatGrid, StatusPill, Table, Row, TopicSearch } from "@/components/admin/kit";
+import { refreshJobs } from "@/components/jobs";
 import { SourceViewer } from "@/components/tutor";
 import { Alert, Button, Checkbox, Empty, ErrorState, Field, Icon, Input, Loading, Segmented, Select, Textarea } from "@/components/ui";
 import { Confirm, Modal } from "@/components/ui/dialog";
 import { api, qs, useApi } from "@/lib/api";
+import { usePersistentState } from "@/lib/persist";
+import { trackUpload } from "@/lib/uploads";
 
 type Source = { id: string; t: string; type: string; icon: string; size: string; units: number | null; figs: number | null; low: number; s: string; stage: number; error: string; when: string; url: string | null };
 type KB = { stats: { l: string; v: string; d: string; icon: string }[]; stages: string[]; sources: Source[]; pending_proposals: number };
@@ -28,12 +31,12 @@ function confTone(c: number) {
 
 function AddSource({ open, onOpenChange, onDone }: { open: boolean; onOpenChange: (v: boolean) => void; onDone: () => void }) {
   const { data: tree } = useApi<Structure>(open ? "/api/admin/structure" : null);
-  const [kind, setKind] = useState<"textbook" | "slides" | "video">("textbook");
-  const [title, setTitle] = useState("");
-  const [url, setUrl] = useState("");
+  const [kind, setKind] = usePersistentState<"textbook" | "slides" | "video">("kb.add.kind", "textbook");
+  const [title, setTitle] = usePersistentState("kb.add.title", "");
+  const [url, setUrl] = usePersistentState("kb.add.url", "");
   const [file, setFile] = useState<File | null>(null);
-  const [subject, setSubject] = useState("");
-  const [chapter, setChapter] = useState("");
+  const [subject, setSubject] = usePersistentState("kb.add.subject", "");
+  const [chapter, setChapter] = usePersistentState("kb.add.chapter", "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const chapters = tree?.find((s) => s.id === subject)?.chapters || [];
@@ -51,8 +54,9 @@ function AddSource({ open, onOpenChange, onDone }: { open: boolean; onOpenChange
     else return setErr(kind === "video" ? "Paste a YouTube link or choose a video file." : "Choose a file to upload.");
     setBusy(true);
     try {
-      await api.upload("/api/admin/kb/sources", f);
+      await trackUpload(title.trim() || file?.name || url.trim() || "New source", api.upload("/api/admin/kb/sources", f));
       toast.success("Source added. Processing has started.");
+      refreshJobs();
       setTitle("");
       setUrl("");
       setFile(null);
@@ -350,12 +354,13 @@ export default function KnowledgeBase() {
     refreshInterval: (d) => (d?.sources.some((s) => s.s === "Processing") ? 3000 : 0),
   });
   const [adding, setAdding] = useState(false);
-  const [kind, setKind] = useState<(typeof KINDS)[number]>("All");
-  const [lowOnly, setLowOnly] = useState(false);
-  const [source, setSource] = useState<string>("");
-  const [q, setQ] = useState("");
+  // Filters and the selected content unit are remembered while you move around the console.
+  const [kind, setKind] = usePersistentState<(typeof KINDS)[number]>("kb.kind", "All");
+  const [lowOnly, setLowOnly] = usePersistentState("kb.low", false);
+  const [source, setSource] = usePersistentState<string>("kb.source", "");
+  const [q, setQ] = usePersistentState("kb.q", "");
   const [qDeb, setQDeb] = useState("");
-  const [sel, setSel] = useState<string | null>(null);
+  const [sel, setSel] = usePersistentState<string | null>("kb.unit", null);
   const [delSrc, setDelSrc] = useState<Source | null>(null);
   useEffect(() => {
     const t = setTimeout(() => setQDeb(q), 250);

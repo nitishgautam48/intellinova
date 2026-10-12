@@ -5,8 +5,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 
+import { RunningJobs } from "@/components/jobs";
 import { Icon, Loading, Logo } from "@/components/ui";
 import { api, useApi } from "@/lib/api";
+import { clearPersisted } from "@/lib/persist";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
@@ -173,6 +175,7 @@ export function StudentShell({ children }: { children: React.ReactNode }) {
   };
   const logout = async () => {
     await api.post("/api/auth/logout").catch(() => {});
+    clearPersisted("student");
     window.location.href = "/login";
   };
 
@@ -233,6 +236,7 @@ export function StudentShell({ children }: { children: React.ReactNode }) {
               {me.streak} day{me.streak > 1 ? "s" : ""}
             </div>
           )}
+          <RunningJobs portal="student" />
           <button onClick={toggle} aria-label="Toggle dark mode" className="grid h-10 w-10 place-items-center rounded-[10px] border-0 bg-transparent text-ink2 hover:bg-surface2">
             <Icon name={theme === "dark" ? "light_mode" : "dark_mode"} />
           </button>

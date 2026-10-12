@@ -7,6 +7,7 @@ import { RevisionPackButton } from "@/components/revision-pack";
 import { Card, ErrorState, Icon, LinkButton, Loading, PageHead, Pill, Select } from "@/components/ui";
 import { useApi } from "@/lib/api";
 import { linkFor } from "@/lib/links";
+import { usePersistentState } from "@/lib/persist";
 import { plural, toneOf, type Tone } from "@/lib/utils";
 
 type Progress = {
@@ -72,17 +73,18 @@ export default function ProgressPage() {
   const router = useRouter();
   const { data: p, error, mutate } = useApi<Progress>("/api/progress");
   const { data: setup } = useApi<Setup>("/api/practice/setup");
-  const [chapter, setChapter] = useState<string>("");
+  const [chapter, setChapter] = usePersistentState<string>("progress.chapter", "");
   const { data: m } = useApi<Mastery>(`/api/practice/mastery${chapter ? `?chapter_id=${chapter}` : ""}`);
-  const [curveTopic, setCurveTopic] = useState<string | null>(null);
-  const [subj, setSubj] = useState(0);
+  const [curveTopic, setCurveTopic, curveReady] = usePersistentState<string | null>("progress.topic", null);
+  const [subj, setSubj] = usePersistentState("progress.subject", 0);
   useEffect(() => {
-    if (m && !curveTopic) setCurveTopic(m.rows.find((r) => r.status !== "Not assessed")?.topic_id || null);
-  }, [m, curveTopic]);
+    if (m && curveReady && (!curveTopic || !m.rows.some((r) => r.topic_id === curveTopic)))
+      setCurveTopic(m.rows.find((r) => r.status !== "Not assessed")?.topic_id || null);
+  }, [m, curveTopic, curveReady, setCurveTopic]);
   if (error) return <ErrorState error={error} retry={() => mutate()} />;
   if (!p) return <Loading />;
   const maxW = Math.max(60, ...p.weeks.map((w) => w.m));
-  const heat = p.heatmap[subj];
+  const heat = p.heatmap[subj] || p.heatmap[0];
   const weakIds = m?.rows.filter((r) => r.status === "Weak" || r.status === "Developing").map((r) => r.topic_id) || [];
 
   return (

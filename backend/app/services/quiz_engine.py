@@ -25,6 +25,8 @@ def _seen(db: Session, user_id: uuid.UUID) -> set[uuid.UUID]:
 
 def prepare(db: Session, quiz_id: uuid.UUID) -> Quiz:
     quiz = db.get(Quiz, quiz_id)
+    if quiz is None or quiz.status != "preparing":
+        return quiz  # cancelled, timed out or already prepared
     try:
         seen = _seen(db, quiz.user_id)
         per_topic = max(2, math.ceil(quiz.n / max(len(quiz.topic_ids), 1)) + 1)
@@ -41,6 +43,9 @@ def prepare(db: Session, quiz_id: uuid.UUID) -> Quiz:
                     problems.append(str(e))
                 except LLMError as e:
                     problems.append(str(e))
+        db.refresh(quiz)
+        if quiz.status != "preparing":
+            return quiz  # the student cancelled, or it ran past the time limit, while questions were being written
         total = questions.pool(db, quiz.topic_ids, quiz.types)
         if total == 0:
             quiz.status = "failed"

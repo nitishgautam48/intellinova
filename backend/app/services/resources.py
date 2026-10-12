@@ -60,7 +60,11 @@ def detect(url: str) -> dict:
             return _detect_youtube(url)
         except Exception as e:  # noqa: BLE001
             log.warning("YouTube metadata failed for %s: %s", url, e)
-            return {"url": url, "platform": "YouTube", "available": False, "title": "", "error": str(e)[:200]}
+            msg = str(e)[:200]
+            if parsing.youtube_blocked(e):
+                msg = ("YouTube asked to confirm this isn't a bot, so the link couldn't be checked. Try again in a "
+                       "few hours. (An admin can also add a YouTube cookies file: see infra/youtube/README.md.)")
+            return {"url": url, "platform": "YouTube", "available": False, "title": "", "error": msg}
     return _detect_web(url)
 
 
@@ -116,8 +120,18 @@ def _detect_youtube(url: str) -> dict:
                 "description": (info.get("description") or "")[:2000], "thumbnail_url": "",
                 "duration_seconds": total, "duration_label": f"{len(vids)} videos · {human_duration(total)}",
                 "languages": [], "stats": {}}
-    with parsing._ydl({}) as y:
-        info = y.extract_info(url, download=False)
+    try:
+        with parsing._ydl({}) as y:
+            info = y.extract_info(url, download=False)
+    except Exception as e:
+        # YouTube's bot check (or another yt-dlp failure): the public oEmbed still gives title, channel and thumbnail.
+        meta = parsing.youtube_oembed(url)
+        if meta is None:
+            raise
+        log.warning("yt-dlp could not read %s (%s); using oEmbed", url, str(e)[:160])
+        return {"url": url, "platform": "YouTube", "rtype": "Video", "available": True, "title": meta.get("title") or "",
+                "creator": meta.get("author_name") or "", "description": "", "thumbnail_url": meta.get("thumbnail_url") or "",
+                "duration_seconds": 0, "duration_label": "", "languages": [], "stats": {}}
     dur = int(info.get("duration") or 0)
     return {"url": url, "platform": "YouTube", "rtype": "Video", "available": True, "title": info.get("title") or "",
             "creator": info.get("uploader") or info.get("channel") or "", "description": (info.get("description") or "")[:2000],

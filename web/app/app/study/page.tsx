@@ -5,8 +5,11 @@ import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { refreshJobs } from "@/components/jobs";
 import { Button, Icon, LinkButton, PageHead, Segmented, Select, Textarea } from "@/components/ui";
 import { api, useApi } from "@/lib/api";
+import { usePersistentState } from "@/lib/persist";
+import { trackUpload } from "@/lib/uploads";
 
 type Row = { id: string; t: string; s: string; when: string; status: string; fav: boolean; kind: string; icon: string };
 const INPUTS = [
@@ -21,11 +24,11 @@ const isYT = (u: string) => /(?:youtube\.com\/(?:watch|playlist|shorts|embed|liv
 export default function StudyAI() {
   const router = useRouter();
   const { data: lib } = useApi<Row[]>("/api/study/materials");
-  const [kind, setKind] = useState<(typeof INPUTS)[number]["v"]>("link");
-  const [url, setUrl] = useState("");
-  const [text, setText] = useState("");
+  const [kind, setKind] = usePersistentState<(typeof INPUTS)[number]["v"]>("study.kind", "link");
+  const [url, setUrl] = usePersistentState("study.url", "");
+  const [text, setText] = usePersistentState("study.text", "");
   const [file, setFile] = useState<File | null>(null);
-  const [lang, setLang] = useState("en");
+  const [lang, setLang] = usePersistentState("study.lang", "en");
   const [busy, setBusy] = useState(false);
   const [drag, setDrag] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -44,8 +47,14 @@ export default function StudyAI() {
     if (kind === "text") fd.set("text", text);
     if (file && (kind === "file" || kind === "slides")) fd.set("file", file);
     try {
-      const m = await api.upload<{ id: string }>("/api/study/materials", fd);
-      router.push(`/app/study/${m.id}`);
+      const req = api.upload<{ id: string }>("/api/study/materials", fd);
+      const m = file && (kind === "file" || kind === "slides") ? await trackUpload(file.name, req) : await req;
+      setUrl("");
+      setText("");
+      refreshJobs();
+      // If you moved to another page while it uploaded, don't pull you back: the top bar says when it's ready.
+      if (window.location.pathname === "/app/study") router.push(`/app/study/${m.id}`);
+      else toast.success("Study material started. You'll get a notice when it's ready.");
     } catch (e) {
       toast.error((e as Error).message);
       setBusy(false);

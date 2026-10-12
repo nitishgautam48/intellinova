@@ -159,11 +159,12 @@ services:
     volumes:
       - uploads:/data/uploads
       - models:/models
+      - ./infra/youtube:/config/youtube:ro
 
   worker:
     build: ./backend
     restart: unless-stopped
-    command: ["celery", "-A", "app.workers.celery_app", "worker", "-l", "info", "-Q", "ingest,ai,signal,feedback,eval,default", "--concurrency", "${WORKER_CONCURRENCY:-2}"]
+    command: ["celery", "-A", "app.workers.celery_app", "worker", "-l", "info", "-Q", "ingest,ai,signal,feedback,eval,default", "--concurrency", "${WORKER_CONCURRENCY:-1}"]
     environment: *backend-env
     depends_on: [api]
     # The image's health check calls the API port, which the worker doesn't serve.
@@ -175,6 +176,7 @@ services:
     volumes:
       - uploads:/data/uploads
       - models:/models
+      - ./infra/youtube:/config/youtube:ro
 
   beat:
     build: ./backend

@@ -18,6 +18,21 @@ from app.workers import tasks
 router = APIRouter(prefix="/api/practice", tags=["practice"])
 
 
+# A quiz that is still "preparing" after this long was stopped by a busy AI model or a worker restart. It is marked
+# failed (questions already written and checked stay in the bank) so it never blocks a new quiz.
+PREP_LIMIT = timedelta(minutes=15)
+STUCK_MSG = ("This quiz took too long to prepare, usually because the AI was busy with other work such as a textbook "
+             "being processed. Questions already written are kept, so trying again is quicker.")
+
+
+def expire_stuck(db: Session, q: Quiz) -> bool:
+    if q.status == "preparing" and q.created_at and now() - q.created_at > PREP_LIMIT:
+        q.status, q.error = "failed", STUCK_MSG
+        db.commit()
+        return True
+    return False
+
+
 @router.get("/setup")
 def setup(user: User = Depends(student_user), db: Session = Depends(get_db)):
     prof = db.get(StudentProfile, user.id)
@@ -42,6 +57,8 @@ def setup(user: User = Depends(student_user), db: Session = Depends(get_db)):
         hist.append({"id": str(q.id), "t": q.title, "mode": q.mode, "when": rel_time(q.finished_at),
                      "m": f"{c.get('correct', 0)} of {(q.summary or {}).get('total', len(q.items))} · {rel_time(q.finished_at)}",
                      "icon": {"Mock exam": "timer", "Diagnostic": "explore"}.get(q.mode, "quiz")})
+    for stuck in db.scalars(select(Quiz).where(Quiz.user_id == user.id, Quiz.status == "preparing")):
+        expire_stuck(db, stuck)
     active = db.scalar(select(Quiz).where(Quiz.user_id == user.id, Quiz.status.in_(("preparing", "active")))
                        .order_by(Quiz.created_at.desc()).limit(1))
     return {"chapters": chapters, "current_chapter_id": str(cur.id) if cur else None, "history": hist,
@@ -87,7 +104,9 @@ def quiz_out(db: Session, q: Quiz) -> dict:
     time_left = None
     if q.time_limit_s and q.started_at and q.status == "active":
         time_left = max(0, int(q.time_limit_s - (now() - q.started_at).total_seconds()))
+    preparing_s = int((now() - q.created_at).total_seconds()) if q.status == "preparing" and q.created_at else None
     return {"id": str(q.id), "title": q.title, "mode": q.mode, "status": q.status, "error": q.error, "n": q.n,
+            "preparing_s": preparing_s, "retryable": q.status == "failed" and not q.items,
             "difficulty": q.difficulty_mode, "types": q.types, "items": items, "current": current,
             "time_left": time_left, "summary": q.summary if q.status == "completed" else None}
 
@@ -102,8 +121,33 @@ def _own(db: Session, qid: str, user: User) -> Quiz:
 @router.get("/quizzes/{qid}")
 def get_quiz(qid: str, user: User = Depends(student_user), db: Session = Depends(get_db)):
     q = _own(db, qid, user)
+    expire_stuck(db, q)
     if q.status == "active" and q.time_limit_s and q.started_at and (now() - q.started_at).total_seconds() > q.time_limit_s + 5:
         quiz_engine.finish(db, q)
+    return quiz_out(db, q)
+
+
+@router.post("/quizzes/{qid}/cancel")
+def cancel_quiz(qid: str, user: User = Depends(student_user), db: Session = Depends(get_db)):
+    """Stops waiting for a quiz that is still being prepared."""
+    q = _own(db, qid, user)
+    if q.status != "preparing":
+        raise HTTPException(400, "This quiz is not being prepared.")
+    q.status, q.error = "failed", "Cancelled. Questions already written are kept for next time."
+    db.commit()
+    return quiz_out(db, q)
+
+
+@router.post("/quizzes/{qid}/retry")
+def retry_quiz(qid: str, user: User = Depends(student_user), db: Session = Depends(get_db)):
+    """Prepares a quiz that failed or was cancelled again (same topics and settings)."""
+    q = _own(db, qid, user)
+    expire_stuck(db, q)
+    if q.status != "failed" or q.items:
+        raise HTTPException(400, "Only a quiz that couldn't be prepared can be tried again.")
+    q.status, q.error, q.created_at = "preparing", "", now()
+    db.commit()
+    tasks.prepare_quiz.delay(str(q.id))
     return quiz_out(db, q)
 
 

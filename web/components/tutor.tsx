@@ -8,10 +8,11 @@ import { toast } from "sonner";
 import { Drawer, Modal } from "@/components/ui/dialog";
 import { Button, Checkbox, CiteBadge, Empty, Icon, Loading, PageHead, Segmented, Select, Spinner, Toggle } from "@/components/ui";
 import { api, PORTAL_HEADER, useApi } from "@/lib/api";
+import { usePersistentState, writePersisted } from "@/lib/persist";
 import { canRecord, recordUtterance, type Capture } from "@/lib/voice";
 
 type Cite = { n: number; unit_id: string; source_title: string; source_type: string; icon: string; kind: string; location: string; excerpt: string };
-type Msg = { id: string; role: "user" | "assistant"; content: string; lang: string; citations: Cite[]; status: string; pending?: boolean; searched?: string | null };
+type Msg = { id: string; role: "user" | "assistant"; content: string; lang: string; citations: Cite[]; status: string; pending?: boolean; searched?: string | null; at?: string };
 type Scope = { kind: "all" | "subject" | "chapter" | "mine" | "sources"; id?: string; ids?: string[]; label: string };
 type Scopes = {
   subjects: { id: string; name: string; chapters: { id: string; name: string }[] }[];
@@ -19,6 +20,13 @@ type Scopes = {
 };
 type Conv = { id: string; title: string; lang: string; source_only: boolean; updated: string; intake: boolean; greeting: string | null; scope?: Scope; messages?: Msg[] };
 const ALL: Scope = { kind: "all", label: "All my material" };
+
+/** The last message is the student's question with no answer yet, asked within the last 5 minutes. */
+function awaitingAnswer(c?: Conv): boolean {
+  const last = c?.messages?.[c.messages.length - 1];
+  if (!last || last.role !== "user" || !last.at) return false;
+  return Date.now() - new Date(last.at).getTime() < 5 * 60 * 1000;
+}
 type Sugg = { chapter: { id: string; name: string; subject: string } | null; prompts: string[]; sources: { icon: string; t: string; n: number }[]; units: number };
 type UnitCtx = {
   unit_id: string; title: string; type: string; icon: string; loc: string; kind: string; excerpt: string; topic: string | null; open_url: string | null;
@@ -469,15 +477,23 @@ function ScopePicker({ open, onOpenChange, value, onApply }: { open: boolean; on
 export function Tutor({ conversationId, initialQ }: { conversationId?: string; initialQ?: string }) {
   const router = useRouter();
   const { data: sugg } = useApi<Sugg>("/api/tutor/suggestions");
-  const { data: conv, mutate } = useApi<Conv>(conversationId ? `/api/tutor/conversations/${conversationId}` : null);
+  const [busy, setBusy] = useState(false);
+  // If you left while the tutor was still answering, your question is already saved but the answer isn't yet:
+  // keep checking until it arrives (for up to 5 minutes after the question was asked).
+  const { data: conv, error: convError, mutate } = useApi<Conv>(conversationId ? `/api/tutor/conversations/${conversationId}` : null, {
+    refreshInterval: (d) => (!busy && awaitingAnswer(d) ? 3000 : 0),
+  });
   const { data: history, mutate: mutateHist } = useApi<Conv[]>("/api/tutor/conversations");
-  const [lang, setLang] = useState<string>("en");
-  const [srcOnly, setSrcOnly] = useState(false);
-  const [scope, setScope] = useState<Scope>(ALL);
+  // Settings and the question you're typing are remembered while you move around the app.
+  const [lang, setLang] = usePersistentState<string>("tutor.lang", "en");
+  const [srcOnly, setSrcOnly] = usePersistentState("tutor.sourceOnly", false);
+  const [scope, setScope] = usePersistentState<Scope>(`tutor.scope.${conversationId || "new"}`, ALL);
   const [picking, setPicking] = useState(false);
   const [msgs, setMsgs] = useState<Msg[]>([]);
-  const [text, setText] = useState(initialQ || "");
-  const [busy, setBusy] = useState(false);
+  // Once the first question creates the conversation, the draft is kept under it, so it's still there when
+  // Ask Tutor reopens this conversation later.
+  const [draftFor, setDraftFor] = useState(conversationId || "new");
+  const [text, setText, draftReady] = usePersistentState(`tutor.draft.${draftFor}`, "");
   const [voice, setVoice] = useState(false);
   const [sel, setSel] = useState<{ msg: string; n: number } | null>(null);
   const [histOpen, setHistOpen] = useState(false);
@@ -486,7 +502,20 @@ export function Tutor({ conversationId, initialQ }: { conversationId?: string; i
   const speech = useSpeech(lang);
 
   useEffect(() => {
-    if (conv) {
+    if (draftReady && initialQ) setText(initialQ);
+  }, [draftReady, initialQ, setText]);
+  useEffect(() => {
+    if (conversationId) writePersisted("tutor.last", conversationId);
+  }, [conversationId]);
+  useEffect(() => {
+    // The remembered conversation was deleted: start a new one instead of waiting forever.
+    if (convError && (convError as { status?: number }).status === 404) {
+      writePersisted("tutor.last", null);
+      router.replace("/app/tutor?new=1");
+    }
+  }, [convError, router]);
+  useEffect(() => {
+    if (conv && !busy) {
       setMsgs(conv.messages || []);
       setLang(conv.lang);
       setSrcOnly(conv.source_only);
@@ -494,12 +523,13 @@ export function Tutor({ conversationId, initialQ }: { conversationId?: string; i
       const last = [...(conv.messages || [])].reverse().find((m) => m.role === "assistant" && m.citations.length);
       if (last) setSel({ msg: last.id, n: 1 });
     }
-  }, [conv]);
+  }, [conv]); // eslint-disable-line react-hooks/exhaustive-deps
+  const stillAnswering = !busy && awaitingAnswer(conv);
   useEffect(() => {
     // Block body on purpose: newer browsers return a Promise from scrollIntoView, and an effect must
     // return nothing or a cleanup function (React calls anything else on unmount and crashes).
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [msgs.length, busy]);
+  }, [msgs.length, busy, stillAnswering]);
 
   const selectedCite = sel ? msgs.find((m) => m.id === sel.msg)?.citations.find((c) => c.n === sel.n) : undefined;
 
@@ -507,6 +537,7 @@ export function Tutor({ conversationId, initialQ }: { conversationId?: string; i
     if (conversationId) return conversationId;
     const c = await api.post<Conv>("/api/tutor/conversations", { lang, source_only: srcOnly, scope });
     window.history.replaceState(null, "", `/app/tutor/${c.id}`);
+    writePersisted("tutor.last", c.id);
     return c.id;
   };
   const cidRef = useRef<string | undefined>(conversationId);
@@ -521,6 +552,7 @@ export function Tutor({ conversationId, initialQ }: { conversationId?: string; i
     try {
       const cid = cidRef.current || (await ensureConv());
       cidRef.current = cid;
+      setDraftFor(cid);
       const r = await api.post<{ user: Msg; assistant: Msg }>(`/api/tutor/conversations/${cid}/messages`, { content: t });
       setMsgs((m) => [...m.filter((x) => x.id !== temp.id), r.user, r.assistant]);
       if (r.assistant.citations.length) {
@@ -532,7 +564,8 @@ export function Tutor({ conversationId, initialQ }: { conversationId?: string; i
     } catch (e) {
       setMsgs((m) => m.filter((x) => x.id !== temp.id));
       setText(t);
-      toast.error((e as Error).message);
+      // The question stays in the box; one tap sends it again.
+      toast.error((e as Error).message, { duration: 12000, action: { label: "Retry", onClick: () => void send(t, speakReply) } });
       return null;
     } finally {
       setBusy(false);
@@ -642,7 +675,7 @@ export function Tutor({ conversationId, initialQ }: { conversationId?: string; i
             <Button size="md" icon="history" onClick={() => setHistOpen(true)}>
               History
             </Button>
-            <Button size="md" icon="add" onClick={() => router.push("/app/tutor?new=1")}>
+            <Button size="md" icon="add" onClick={() => router.push(`/app/tutor?new=${Date.now()}`)}>
               New
             </Button>
           </>
@@ -702,9 +735,9 @@ export function Tutor({ conversationId, initialQ }: { conversationId?: string; i
                 <Answer key={m.id} m={m} sel={sel} onPick={pick} sourceOnly={srcOnly} onWiden={busy ? undefined : () => widen(m.id)} />
               ),
             )}
-            {busy && (
+            {(busy || stillAnswering) && (
               <div className="flex items-center gap-2 text-[13px] text-ink2">
-                <Spinner size={18} /> Checking your material…
+                <Spinner size={18} /> {busy ? "Checking your material…" : "Still answering your last question…"}
               </div>
             )}
             <div ref={endRef} />

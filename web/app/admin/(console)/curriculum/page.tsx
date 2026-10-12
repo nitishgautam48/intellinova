@@ -6,9 +6,11 @@ import { toast } from "sonner";
 
 import { Kicker, Panel, StatusPill, TopicSearch } from "@/components/admin/kit";
 import { FlowMap, type FlowMapT } from "@/components/flow-map";
+import { refreshJobs } from "@/components/jobs";
 import { Button, Empty, ErrorState, Field, Icon, Input, Loading, Pill, Select, Textarea } from "@/components/ui";
 import { Confirm, Modal } from "@/components/ui/dialog";
 import { api, useApi } from "@/lib/api";
+import { usePersistentState } from "@/lib/persist";
 
 type SubjectRow = { id: string; board: string; class_level: string; stream: string | null; name: string; version: number; draft: boolean; chapters: number };
 type TopicT = { id: string; n: number; name: string; slug: string; est: number; summary: string; published: boolean; res: number; pre: { id: string; name: string }[]; subtopics: string[] };
@@ -102,6 +104,7 @@ function TopicEditor({ t, chapterName, onSaved, onDelete, onRefresh }: { t: Topi
       if (d.status === "done") toast.success(d.added ? `Added ${d.added} video${d.added === 1 ? "" : "s"} from YouTube` : "No new videos passed the syllabus check");
       else if (d.status === "failed") toast.error("The YouTube search failed. See Resources › Search log for details.");
       else toast.success("Searching YouTube. New videos will appear in Resources shortly.");
+      refreshJobs();
       onRefresh();
     } catch (e) {
       toast.error((e as Error).message);
@@ -181,11 +184,12 @@ function TopicEditor({ t, chapterName, onSaved, onDelete, onRefresh }: { t: Topi
 export default function Curriculum() {
   const subjects = useApi<SubjectRow[]>("/api/admin/curriculum/subjects");
   const { data: suggestions } = useApi<{ id: string }[]>("/api/admin/kb/proposals");
-  const [sid, setSid] = useState<string | null>(null);
+  // The selected subject, chapter and topic are remembered while you move around the console.
+  const [sid, setSid, sidReady] = usePersistentState<string | null>("curriculum.subject", null);
   const [tree, setTree] = useState<Tree | null>(null);
   const [treeErr, setTreeErr] = useState<unknown>(null);
-  const [chId, setChId] = useState<string | null>(null);
-  const [tId, setTId] = useState<string | null>(null);
+  const [chId, setChId] = usePersistentState<string | null>("curriculum.chapter", null);
+  const [tId, setTId] = usePersistentState<string | null>("curriculum.topic", null);
   const [modal, setModal] = useState<null | "subject" | "chapter" | "topic" | "rename" | "publish" | "map">(null);
   const [note, setNote] = useState("");
   const [confirm, setConfirm] = useState<null | { title: string; body: string; run: () => Promise<Tree | void> }>(null);
@@ -197,12 +201,12 @@ export default function Curriculum() {
   const [cls, setCls] = useState("");
 
   useEffect(() => {
-    if (!rows.length || sid) return;
+    if (!rows.length || !sidReady || (sid && rows.some((s) => s.id === sid))) return;
     const first = rows[0];
     setSid(first.id);
     setBoard(first.board);
     setCls(first.class_level);
-  }, [rows, sid]);
+  }, [rows, sid, sidReady, setSid]);
 
   // Keep the board and class pickers in step with the selected subject (e.g. after creating one).
   useEffect(() => {

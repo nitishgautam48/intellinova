@@ -1,12 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Panel, Table, Row } from "@/components/admin/kit";
+import { refreshJobs } from "@/components/jobs";
 import { Alert, Bar, Button, Checkbox, Empty, ErrorState, Field, Icon, Input, Loading, Segmented, Select, Tabs, Textarea } from "@/components/ui";
 import { Confirm, Modal } from "@/components/ui/dialog";
 import { api, PORTAL_HEADER, useApi } from "@/lib/api";
+import { usePersistentState } from "@/lib/persist";
 import { f2 } from "@/lib/utils";
 
 type MetricKey = "faith" | "relev" | "cprec" | "crec" | "refuse" | "cite";
@@ -101,8 +104,8 @@ const STATUS_TONE: Record<string, [string, string]> = {
 };
 
 function CaseTable({ cases, targets }: { cases: CaseResult[]; targets: Record<MetricKey, number> }) {
-  const [open, setOpen] = useState<number | null>(null);
-  const [only, setOnly] = useState<"all" | "low" | "off">("all");
+  const [open, setOpen] = usePersistentState<number | null>("eval.open", null);
+  const [only, setOnly] = usePersistentState<"all" | "low" | "off">("eval.only", "all");
   const low = (c: CaseResult) => !c.off && (["faith", "relev", "cprec", "crec", "cite"] as const).some((k) => c[k] !== null && c[k]! < (targets[k] ?? 0.8) - 0.1);
   const shown = cases.map((c, i) => ({ c, i })).filter(({ c }) => only === "all" || (only === "off" ? c.off : low(c)));
   const cols = "2.6fr .9fr repeat(5,.62fr) .6fr";
@@ -165,8 +168,8 @@ function scoreColor(v: number | null, target = 0.8) {
 }
 
 function Results({ data, onRun }: { data: Runs; onRun: () => void }) {
-  const [pick, setPick] = useState<string | null>(null);
-  const [fw, setFw] = useState<(typeof FW)[number]>("RAGAS");
+  const [pick, setPick] = usePersistentState<string | null>("eval.run", null);
+  const [fw, setFw] = usePersistentState<(typeof FW)[number]>("eval.fw", "RAGAS");
   const [busy, setBusy] = useState(false);
   const run = data.runs.find((r) => r.id === pick) || data.runs.find((r) => r.status === "completed") || data.runs[0];
   const active = data.runs.find((r) => r.status === "queued" || r.status === "running");
@@ -177,6 +180,7 @@ function Results({ data, onRun }: { data: Runs; onRun: () => void }) {
     try {
       await api.post("/api/admin/eval/runs", { framework: fw });
       toast.success("Evaluation started");
+      refreshJobs();
       onRun();
     } catch (e) {
       toast.error((e as Error).message);
@@ -437,11 +441,11 @@ function TestSet({ onChange }: { onChange: () => void }) {
   const { data, error, mutate } = useApi<Case[]>("/api/admin/eval/cases");
   const [editing, setEditing] = useState<{ id: string | null; v: Omit<Case, "id"> } | null>(null);
   const [importing, setImporting] = useState(false);
-  const [json, setJson] = useState("");
+  const [json, setJson] = usePersistentState("eval.import.json", "");
   const [file, setFile] = useState<File | null>(null);
-  const [subject, setSubject] = useState("");
+  const [subject, setSubject] = usePersistentState("eval.import.subject", "");
   const [drafting, setDrafting] = useState(false);
-  const [draft, setDraft] = useState({ n: 12, off: 3 });
+  const [draft, setDraft] = usePersistentState("eval.draft", { n: 12, off: 3 });
   const [del, setDel] = useState<Case | null>(null);
   const [busy, setBusy] = useState(false);
   const [q, setQ] = useState("");
@@ -614,7 +618,7 @@ function QuestionBank() {
   const { data, error, mutate } = useApi<Bank>("/api/admin/eval/bank", {
     refreshInterval: (d) => (d?.prep && d.prep.status !== "done" ? 3000 : 0),
   });
-  const [per, setPer] = useState(10);
+  const [per, setPer] = usePersistentState("eval.bank.per", 10);
   const [busy, setBusy] = useState(false);
   const [q, setQ] = useState("");
   if (error) return <ErrorState error={error} retry={() => mutate()} />;
@@ -626,6 +630,7 @@ function QuestionBank() {
     try {
       await api.post("/api/admin/eval/bank/prepare", { per_topic: per });
       toast.success("Preparing the question bank");
+      refreshJobs();
       mutate();
     } catch (e) {
       toast.error((e as Error).message);
@@ -707,11 +712,24 @@ function QuestionBank() {
   );
 }
 
-export default function Evaluation() {
+type EvalTab = "results" | "cases" | "bank";
+const TABS: EvalTab[] = ["results", "cases", "bank"];
+
+function EvaluationPage() {
   const { data, error, mutate } = useApi<Runs>("/api/admin/eval/runs", {
     refreshInterval: (d) => (d?.runs.some((r) => r.status === "queued" || r.status === "running") ? 3000 : 0),
   });
-  const [tab, setTab] = useState<"results" | "cases" | "bank">("results");
+  // The open tab lives in the address (?tab=cases) so Back, refresh and links keep it; it's also remembered
+  // for when you come back through the sidebar.
+  const router = useRouter();
+  const params = useSearchParams();
+  const [lastTab, setLastTab] = usePersistentState<EvalTab>("eval.tab", "results");
+  const fromUrl = params.get("tab") as EvalTab | null;
+  const tab: EvalTab = fromUrl && TABS.includes(fromUrl) ? fromUrl : lastTab;
+  const setTab = (t: EvalTab) => {
+    setLastTab(t);
+    router.replace(`/admin/eval?tab=${t}`, { scroll: false });
+  };
   if (error) return <ErrorState error={error} retry={() => mutate()} />;
   if (!data) return <Loading />;
   return (
@@ -719,5 +737,13 @@ export default function Evaluation() {
       <Tabs value={tab} onChange={setTab} tabs={[{ v: "results", l: "Results", icon: "query_stats" }, { v: "cases", l: "Test set", icon: "checklist", n: data.cases }, { v: "bank", l: "Question bank", icon: "quiz" }]} />
       {tab === "results" ? <Results data={data} onRun={() => mutate()} /> : tab === "cases" ? <TestSet onChange={() => mutate()} /> : <QuestionBank />}
     </div>
+  );
+}
+
+export default function Evaluation() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <EvaluationPage />
+    </Suspense>
   );
 }

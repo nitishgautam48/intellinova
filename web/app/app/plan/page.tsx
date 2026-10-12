@@ -8,6 +8,7 @@ import { Alert, Bar, Button, Card, CardTitle, Chip, Empty, ErrorState, Field, Ic
 import { Confirm } from "@/components/ui/dialog";
 import { api, useApi } from "@/lib/api";
 import { linkFor } from "@/lib/links";
+import { usePersistentState, writePersisted } from "@/lib/persist";
 import type { Tone } from "@/lib/utils";
 
 type Item = { key: string; kind: "learn" | "practice" | "review" | "mock"; topic_id: string; topic_ids?: string[]; name: string; subject: string; chapter: string; chapter_id: string; minutes: number; why: string; tone: Tone; done: boolean };
@@ -29,16 +30,18 @@ const link = (it: Item) => linkFor(it.kind === "learn" ? { screen: "learn", chap
 function Setup({ initial, onSaved, onCancel }: { initial: Schedule | null; onSaved: (s: Schedule) => void; onCancel?: () => void }) {
   const { data: opts, error } = useApi<Opt[]>("/api/schedule/options");
   const tomorrow = iso(new Date(Date.now() + 86400000));
-  const [title, setTitle] = useState(initial?.title || "");
-  const [date, setDate] = useState(initial?.exam_date || "");
-  const [mins, setMins] = useState(initial?.minutes_per_day || 60);
-  const [subs, setSubs] = useState<string[]>(initial?.subject_ids || []);
-  const [chs, setChs] = useState<string[]>(initial?.chapter_ids || []);
-  const [rest, setRest] = useState<number[]>(initial?.rest_days || []);
+  // What you fill in is remembered while you move around the app, until the schedule is built.
+  const k = initial ? "plan.edit" : "plan.new";
+  const [title, setTitle] = usePersistentState(`${k}.title`, initial?.title || "");
+  const [date, setDate] = usePersistentState(`${k}.date`, initial?.exam_date || "");
+  const [mins, setMins] = usePersistentState(`${k}.mins`, initial?.minutes_per_day || 60);
+  const [subs, setSubs, subsReady] = usePersistentState<string[]>(`${k}.subs`, initial?.subject_ids || []);
+  const [chs, setChs] = usePersistentState<string[]>(`${k}.chs`, initial?.chapter_ids || []);
+  const [rest, setRest] = usePersistentState<number[]>(`${k}.rest`, initial?.rest_days || []);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    if (opts && !initial && !subs.length) setSubs(opts.map((o) => o.id));
-  }, [opts, initial, subs.length]);
+    if (opts && subsReady && !initial && !subs.length) setSubs(opts.map((o) => o.id));
+  }, [opts, initial, subs.length, subsReady, setSubs]);
   if (error) return <ErrorState error={error} />;
   if (!opts) return <Loading />;
   if (!opts.length) return <Empty icon="menu_book" title="Pick your subjects first">Add subjects in your profile, then come back to plan for an exam.</Empty>;
@@ -52,6 +55,7 @@ function Setup({ initial, onSaved, onCancel }: { initial: Schedule | null; onSav
         chapter_ids: chs.filter((c) => opts.some((o) => subs.includes(o.id) && o.chapters.some((x) => x.id === c))), rest_days: rest,
       });
       toast.success("Schedule ready");
+      for (const f of ["title", "date", "mins", "subs", "chs", "rest"]) writePersisted(`${k}.${f}`, null);
       onSaved(r.schedule);
     } catch (e) {
       toast.error((e as Error).message);

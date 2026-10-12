@@ -325,27 +325,73 @@ def is_youtube(url: str) -> bool:
     return bool(v or p)
 
 
+# YouTube sometimes answers the automatic reader (yt-dlp) with "Sign in to confirm you're not a bot", usually after
+# many videos were read from one internet connection. A single video can still be read without yt-dlp: its title
+# comes from YouTube's public oEmbed endpoint and its words from the captions. Only videos without captions need
+# yt-dlp (to download the audio for Whisper); for those an optional cookies file helps (see infra/youtube/README.md).
+YT_BLOCKED = ("YouTube asked to confirm this isn't a bot, so the video couldn't be downloaded, and it has no captions "
+              "we could read instead. This happens when many videos are read from one internet connection. Try again "
+              "in a few hours, or upload the video file instead. (An admin can also add a YouTube cookies file: see "
+              "infra/youtube/README.md.)")
+YT_BLOCKED_PLAYLIST = ("YouTube asked to confirm this isn't a bot, so this playlist couldn't be listed. Add the videos "
+                       "one at a time instead, or try again in a few hours. (An admin can also add a YouTube cookies "
+                       "file: see infra/youtube/README.md.)")
+
+
+def youtube_blocked(e: BaseException | str) -> bool:
+    s = str(e).lower()
+    return "not a bot" in s or "sign in to confirm" in s or "http error 429" in s or "too many requests" in s
+
+
 def _ydl(opts: dict):
     import yt_dlp
 
+    from app.config import settings
+
     base = {"quiet": True, "no_warnings": True, "skip_download": True}
+    if settings.youtube_cookies_file and os.path.isfile(settings.youtube_cookies_file):
+        base["cookiefile"] = settings.youtube_cookies_file
     base.update(opts)
     return yt_dlp.YoutubeDL(base)
+
+
+def youtube_oembed(url: str) -> dict | None:
+    """Title, channel and thumbnail of a public video, without yt-dlp. None if private, removed or unreachable."""
+    import httpx
+
+    try:
+        with httpx.Client(timeout=15, follow_redirects=True) as c:
+            r = c.get("https://www.youtube.com/oembed", params={"url": url, "format": "json"})
+        return r.json() if r.status_code == 200 else None
+    except (httpx.HTTPError, ValueError):
+        return None
 
 
 def list_videos(url: str) -> list[dict]:
     """[{id, title, duration, url}] for a video or playlist URL."""
     vid, pid = youtube_ids(url)
     if pid and not vid or "playlist" in url:
-        with _ydl({"extract_flat": True}) as y:
-            info = y.extract_info(url, download=False)
+        try:
+            with _ydl({"extract_flat": True}) as y:
+                info = y.extract_info(url, download=False)
+        except Exception as e:
+            if youtube_blocked(e):
+                raise ValueError(YT_BLOCKED_PLAYLIST) from e
+            raise
         return [
             {"id": e.get("id"), "title": e.get("title") or "", "duration": e.get("duration") or 0,
              "url": f"https://www.youtube.com/watch?v={e.get('id')}"}
             for e in (info.get("entries") or []) if e and e.get("id")
         ]
-    with _ydl({}) as y:
-        info = y.extract_info(url, download=False)
+    try:
+        with _ydl({}) as y:
+            info = y.extract_info(url, download=False)
+    except Exception as e:
+        meta = youtube_oembed(url) if vid else None
+        if meta is None:
+            raise
+        log.warning("yt-dlp could not read %s (%s); using oEmbed and captions instead", url, str(e)[:160])
+        return [{"id": vid, "title": meta.get("title") or "", "duration": 0, "url": f"https://www.youtube.com/watch?v={vid}"}]
     return [{"id": info.get("id"), "title": info.get("title") or "", "duration": info.get("duration") or 0,
              "url": info.get("webpage_url") or url}]
 
@@ -465,9 +511,9 @@ def parse_video_url(url: str, with_frames: bool = False) -> Parsed:
     figures: list[Figure] = []
     total = 0
     failed = 0
+    blocked = False
     for k, v in enumerate(vids, start=1):
         prefix = f"Video {k} · " if multi else ""
-        total += v.get("duration") or 0
         rows = youtube_captions(v["id"]) if v.get("id") else None
         audio = None
         if not rows:
@@ -476,8 +522,11 @@ def parse_video_url(url: str, with_frames: bool = False) -> Parsed:
                 rows = whisper_transcribe(audio)
             except Exception as e:  # noqa: BLE001
                 log.warning("Could not transcribe %s: %s", v["url"], e)
+                blocked = blocked or youtube_blocked(e)
                 failed += 1
                 continue
+        # Length from the transcript when YouTube didn't say (read without yt-dlp).
+        total += v.get("duration") or int(max((r["start"] + (r.get("duration") or 0) for r in rows), default=0))
         segments += group_transcript(rows, prefix)
         if audio:
             try:
@@ -485,6 +534,8 @@ def parse_video_url(url: str, with_frames: bool = False) -> Parsed:
             except OSError:
                 pass
     if not segments:
+        if blocked:
+            raise ValueError(YT_BLOCKED)
         raise ValueError("Source is private or has no captions, and the audio could not be transcribed.")
     h, m = divmod(total // 60, 60)
     size = (f"{len(vids)} videos · " if multi else "") + (f"{h} h {m} m" if h else f"{m} min")

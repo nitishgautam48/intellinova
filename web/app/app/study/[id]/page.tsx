@@ -10,6 +10,7 @@ import { SourceViewer } from "@/components/tutor";
 import { Modal } from "@/components/ui/dialog";
 import { Button, Card, ErrorState, Field, Icon, LinkButton, Loading, Select, Tabs, Textarea } from "@/components/ui";
 import { api, useApi } from "@/lib/api";
+import { usePersistentState } from "@/lib/persist";
 
 type Section = { h: string; p: string; def: [string, string] | null; ex: string | null; src: { loc: string; unit_id: string; icon: string } };
 type Outputs = {
@@ -203,14 +204,14 @@ function AudioBrief({ m }: { m: Material }) {
 export default function MaterialPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { data: m, error, mutate } = useApi<Material>(`/api/study/materials/${id}`, { refreshInterval: (d) => (d?.status === "Processing" ? 2500 : 0) });
-  const [tab, setTab] = useState<(typeof TABS)[number][0]>("full");
+  const [tab, setTab] = usePersistentState<(typeof TABS)[number][0]>(`study.tab.${id}`, "full");
   const [viewer, setViewer] = useState<string | null>(null);
   const [flagOpen, setFlagOpen] = useState(false);
   const [flag, setFlag] = useState({ category: "Factual error", note: "" });
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
     if (t && TABS.some((x) => x[0] === t)) setTab(t as typeof tab);
-  }, []);
+  }, [setTab]);
 
   if (error) return <ErrorState error={error} retry={() => mutate()} />;
   if (!m) return <Loading />;

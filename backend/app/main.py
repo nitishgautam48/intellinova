@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import EvalRun
-from app.routers import auth, explore, home, learn, me, plan, practice, search, study, tutor
+from app.routers import auth, explore, home, jobs, learn, me, plan, practice, search, study, tutor
 from app.routers.admin import catalog, curriculum, kb, overview, people
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -27,7 +27,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="IntelliNova API", version="1.0.0", docs_url="/api/docs", openapi_url="/api/openapi.json",
               lifespan=lifespan)
 
-for r in (auth, me, learn, search, tutor, practice, study, explore, home, plan, overview, kb, curriculum, catalog, people):
+for r in (auth, me, learn, search, tutor, practice, study, explore, home, plan, jobs, overview, kb, curriculum, catalog, people):
     app.include_router(r.router)
 
 

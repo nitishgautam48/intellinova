@@ -12,8 +12,8 @@ from app.db import get_db
 from app.models import Chapter, ContentUnit, Conversation, KbSource, Message, StudentProfile, Subject, Topic, User
 from app.routers.common import get_or_404, rel_time, track
 from app.security import STAFF_ROLES, current_user, student_user
-from app.services import grounding, planner, retrieval, storage, stt, tts
-from app.services.llm import LLMError
+from app.services import grounding, llm, planner, retrieval, storage, stt, tts
+from app.services.llm import LLMError, LLMTimeout
 from app.services.parsing import fmt_ts, youtube_ids
 from app.workers import tasks
 
@@ -202,13 +202,25 @@ def ask(cid: str, body: AskIn, user: User = Depends(student_user), db: Session =
     history = list(c.messages)
     um = Message(conversation_id=c.id, role="user", content=body.content.strip(), lang=c.lang)
     db.add(um)
+    old_title = c.title
     if c.title in ("New conversation", "Getting started") and not history:
         c.title = body.content.strip()[:80]
     db.commit()
     try:
         filt = (c.scope or {}).get("filter") or ALL
-        res = grounding.answer(db, user, body.content.strip(), history, c.lang, c.source_only, **scope_args(db, user, filt))
+        # While this student waits, background AI work (textbooks, quizzes) holds back.
+        with llm.priority():
+            res = grounding.answer(db, user, body.content.strip(), history, c.lang, c.source_only, **scope_args(db, user, filt))
     except LLMError as e:
+        # Don't leave an unanswered question in the conversation: the student keeps it in the box and retries.
+        db.rollback()
+        db.delete(db.get(Message, um.id))
+        c.title = old_title
+        db.commit()
+        if isinstance(e, LLMTimeout) or isinstance(e.__cause__, LLMTimeout):
+            raise HTTPException(503, "The AI is busy right now, probably with background work such as a textbook "
+                                     "being processed or a quiz being written, and didn't answer in time. "
+                                     "Your question is still in the box: try again in a minute.") from e
         raise HTTPException(503, str(e)) from e
     am = Message(conversation_id=c.id, role="assistant", content=res["content"], lang=c.lang,
                  citations=res["citations"], status=res["status"], support=res["support"])

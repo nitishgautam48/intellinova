@@ -27,9 +27,15 @@ class Settings(BaseSettings):
     llm_model: str = "llama3.1:8b"
     verifier_model: str = "qwen2.5:7b"
     vision_model: str = "llava:7b"
+    # Describing figures with the vision model is the slowest part of reading a textbook. Per upload: at most this
+    # many figures, each with a shorter time limit, and stop after this many time-outs (the model is overloaded).
+    figure_caption_max: int = 40
+    figure_caption_timeout_s: float = 90.0
+    figure_caption_stop_after: int = 2
     llm_timeout_s: float = 180.0
     llm_num_ctx: int = 8192  # tokens the model reads at once (Ollama's default is too small for our prompts)
     llm_keep_alive: str = "30m"  # how long Ollama keeps a model in GPU memory after the last request
+    llm_yield_max_s: float = 120.0  # how long background AI work waits while a student waits for the tutor
     embeddings_backend: str = "sentence-transformers"  # sentence-transformers | ollama | hash (tests only)
     embeddings_model: str = "intfloat/multilingual-e5-small"
     embed_dim: int = 384
@@ -48,6 +54,9 @@ class Settings(BaseSettings):
 
     # Optional signals
     youtube_api_key: str = ""
+    # Optional: a cookies.txt exported from a browser signed in to YouTube, used by yt-dlp when YouTube asks to
+    # "confirm you're not a bot". Put it at infra/youtube/cookies.txt (mounted here); see infra/youtube/README.md.
+    youtube_cookies_file: str = "/config/youtube/cookies.txt"
 
     # Automatic video discovery: when a topic has fewer than `discovery_min_videos` catalog videos,
     # search YouTube (Data API if youtube_api_key is set, else yt-dlp), check each candidate against the

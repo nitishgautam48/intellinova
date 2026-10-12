@@ -7,7 +7,9 @@ import json
 import logging
 import re
 import time
-from collections.abc import Callable
+import uuid
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import httpx
@@ -19,6 +21,10 @@ log = logging.getLogger(__name__)
 
 class LLMError(Exception):
     pass
+
+
+class LLMTimeout(LLMError):
+    """The model didn't answer in time (usually because it was busy with other work)."""
 
 
 _fakes: dict[str, Callable[[list[dict], dict | None], Any]] = {}
@@ -77,6 +83,56 @@ def _extract_json(text: str) -> Any:
     raise LLMError("Model did not return valid JSON")
 
 
+# --------------------------------------------------------------------------- the tutor goes first
+# Ollama answers one request at a time and an 8 GB GPU holds one model, so a background job (a textbook being
+# processed, a quiz being written) can make a student wait minutes for the tutor. While a student is waiting,
+# background calls hold back between their requests. Uses Redis; if Redis is unreachable nothing waits.
+
+INTERACTIVE = {"tutor_answer", "grounding_check", "tutor_general", "rewrite_query"}
+_PRIO = "llm:interactive:"
+
+
+def _redis():
+    from app.services import cache
+
+    return cache.client()
+
+
+@contextmanager
+def priority() -> Iterator[None]:
+    """Marks a student-facing request (e.g. one tutor question) as in progress for its whole duration."""
+    key: str | None = f"{_PRIO}{uuid.uuid4().hex}"
+    try:
+        _redis().set(key, "1", ex=int(settings.llm_timeout_s * 2) + 60)
+    except Exception:  # noqa: BLE001 - priority is best-effort
+        key = None
+    try:
+        yield
+    finally:
+        if key:
+            try:
+                _redis().delete(key)
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def interactive_waiting() -> bool:
+    try:
+        return next(_redis().scan_iter(f"{_PRIO}*", count=100), None) is not None
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def yield_to_interactive(task: str) -> None:
+    """Background work waits (up to llm_yield_max_s) while a student is waiting for the tutor."""
+    start = time.time()
+    while interactive_waiting() and time.time() - start < settings.llm_yield_max_s:
+        time.sleep(0.5)
+    waited = time.time() - start
+    if waited >= 1:
+        log.info("llm task=%s waited %.1fs for a tutor answer to finish", task, waited)
+
+
 def chat(
     messages: list[dict],
     *,
@@ -86,11 +142,22 @@ def chat(
     temperature: float = 0.2,
     images: list[bytes] | None = None,
     max_tokens: int | None = None,
+    timeout_s: float | None = None,
+    attempts: int = 2,
 ) -> Any:
     """Returns parsed JSON when `schema` is given (a JSON schema dict), else text."""
     if task in _fakes:
         return _fakes[task](messages, schema)
+    if task in INTERACTIVE:
+        with priority():
+            return _chat(messages, task=task, schema=schema, model=model, temperature=temperature, images=images,
+                         max_tokens=max_tokens, timeout_s=timeout_s, attempts=attempts)
+    yield_to_interactive(task)
+    return _chat(messages, task=task, schema=schema, model=model, temperature=temperature, images=images,
+                 max_tokens=max_tokens, timeout_s=timeout_s, attempts=attempts)
 
+
+def _chat(messages, *, task, schema, model, temperature, images, max_tokens, timeout_s, attempts) -> Any:
     msgs = [dict(m) for m in messages]
     if images:
         msgs[-1]["images"] = [base64.b64encode(i).decode() for i in images]
@@ -106,10 +173,10 @@ def chat(
         body["format"] = schema
 
     last_err: Exception | None = None
-    for attempt in range(2):
+    for attempt in range(max(1, attempts)):
         t0 = time.time()
         try:
-            with httpx.Client(timeout=settings.llm_timeout_s) as c:
+            with httpx.Client(timeout=timeout_s or settings.llm_timeout_s) as c:
                 r = c.post(f"{settings.ollama_url}/api/chat", json=body)
             if r.status_code == 404 and "not found" in r.text:
                 raise LLMError(
@@ -123,9 +190,12 @@ def chat(
             last_err = e
             if "not pulled" in str(e):
                 break
+        except httpx.TimeoutException:
+            last_err = LLMTimeout(f"The AI model did not answer within {round(timeout_s or settings.llm_timeout_s)} s")
         except (httpx.HTTPError, KeyError) as e:
             last_err = LLMError(f"LLM unavailable: {e}")
-        time.sleep(1.5 * (attempt + 1))
+        if attempt + 1 < attempts:
+            time.sleep(1.5 * (attempt + 1))
     raise last_err or LLMError("LLM call failed")
 
 

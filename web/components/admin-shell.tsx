@@ -4,8 +4,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
+import { RunningJobs } from "@/components/jobs";
 import { Button, Icon, Loading } from "@/components/ui";
 import { api, useApi } from "@/lib/api";
+import { clearPersisted } from "@/lib/persist";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
@@ -48,6 +50,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   };
   const logout = async () => {
     await api.post("/api/auth/logout").catch(() => {});
+    clearPersisted("admin");
     window.location.href = "/admin/login";
   };
 
@@ -137,6 +140,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search resources by title…" className="min-w-0 flex-1 border-0 bg-transparent outline-none" />
           </form>
           <div className="flex-1" />
+          <RunningJobs portal="admin" />
           <button onClick={toggle} aria-label="Toggle dark mode" className="grid h-[38px] w-[38px] place-items-center rounded-[10px] border-0 bg-transparent text-ink2 hover:bg-surface2">
             <Icon name={theme === "dark" ? "light_mode" : "dark_mode"} />
           </button>

@@ -5,6 +5,7 @@ Stages (shown in the admin console as progress dots):
   4 Identify topics (propose new topics/subtopics for material the curriculum doesn't cover)  5 Index
 """
 import difflib
+import hashlib
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -16,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models import Chapter, ContentUnit, KbSource, StudentProfile, Subject, Topic, TopicPrereq, TopicProposal
 from app.services import embeddings, llm, parsing
-from app.services.llm import LLMError, arr, obj
+from app.services.llm import LLMError, LLMTimeout, arr, obj
 
 log = logging.getLogger(__name__)
 
@@ -50,7 +51,10 @@ def caption_figure(image_path: str, context: str) -> dict | None:
     )
     try:
         out = llm.chat([{"role": "user", "content": prompt}], task="caption_figure", schema=CAPTION_SCHEMA,
-                       model=settings.vision_model, images=[data], temperature=0.1)
+                       model=settings.vision_model, images=[data], temperature=0.1,
+                       timeout_s=settings.figure_caption_timeout_s, attempts=1)
+    except LLMTimeout:
+        raise  # the caller counts timeouts and stops describing figures when the model is overloaded
     except LLMError as e:
         log.warning("Figure captioning skipped: %s", e)
         return None
@@ -296,6 +300,46 @@ def parse_source(src: KbSource) -> parsing.Parsed:
     raise ValueError(f"Unknown source kind {src.kind}")
 
 
+def describe_figures(figures: list) -> tuple[list, int, int]:
+    """Captions figures with the vision model, most useful first, within a budget: repeated images (logos,
+    icons) are described once, at most `figure_caption_max` are tried, and after `figure_caption_stop_after`
+    timeouts the rest are skipped, since a busy model would otherwise hold up the whole textbook for hours.
+    Returns (diagram segments, figures described, figures skipped)."""
+    segments: list = []
+    figs, skipped, timeouts, tried = 0, 0, 0, 0
+    seen: set[str] = set()
+    # Numbered figures ("Figure 11.2 …") first: they're the ones students and questions refer to.
+    ordered = sorted(figures, key=lambda f: 0 if parsing.FIG_RE.match(f.context or "") else 1)
+    for f in ordered:
+        try:
+            digest = hashlib.sha1(Path(f.image_path).read_bytes()).hexdigest()
+        except OSError:
+            continue
+        if digest in seen:  # the same logo or icon repeated on every page
+            continue
+        seen.add(digest)
+        if tried >= settings.figure_caption_max or timeouts >= settings.figure_caption_stop_after:
+            skipped += 1
+            continue
+        tried += 1
+        try:
+            cap = caption_figure(f.image_path, f.context)
+        except LLMTimeout as e:
+            timeouts += 1
+            skipped += 1
+            log.warning("Figure captioning timed out (%d/%d): %s", timeouts, settings.figure_caption_stop_after, e)
+            continue
+        if not cap:
+            continue
+        figs += 1
+        labels = [str(x)[:80] for x in cap.get("labels", [])][:12]
+        text = cap["caption"] + (f" Labels: {', '.join(labels)}." if labels else "")
+        segments.append(parsing.Segment("Diagram", text, f.location, page=f.page, slide=f.slide,
+                                        t_start=f.t_start, heading=f.context[:200], image_path=f.image_path,
+                                        labels=labels))
+    return segments, figs, skipped
+
+
 def ingest(db: Session, source_id: uuid.UUID) -> KbSource:
     src = db.get(KbSource, source_id)
     if src is None:
@@ -313,17 +357,8 @@ def ingest(db: Session, source_id: uuid.UUID) -> KbSource:
         _set_stage(db, src, 1)
 
         segments = list(parsed.segments)
-        figs = 0
-        for f in parsed.figures:
-            cap = caption_figure(f.image_path, f.context)
-            if not cap:
-                continue
-            figs += 1
-            labels = [str(x)[:80] for x in cap.get("labels", [])][:12]
-            text = cap["caption"] + (f" Labels: {', '.join(labels)}." if labels else "")
-            segments.append(parsing.Segment("Diagram", text, f.location, page=f.page, slide=f.slide,
-                                            t_start=f.t_start, heading=f.context[:200], image_path=f.image_path,
-                                            labels=labels))
+        fig_segments, figs, skipped = describe_figures(parsed.figures)
+        segments += fig_segments
         _set_stage(db, src, 2)
 
         if not segments:
@@ -358,7 +393,8 @@ def ingest(db: Session, source_id: uuid.UUID) -> KbSource:
         for u in units:
             u.approved = u.confidence >= LOW_CONFIDENCE
             low += 0 if u.approved else 1
-        src.stats = {**(src.stats or {}), "units": len(units), "figures": figs, "low_confidence": low, "proposals": proposals}
+        src.stats = {**(src.stats or {}), "units": len(units), "figures": figs, "figures_skipped": skipped,
+                     "low_confidence": low, "proposals": proposals}
         src.status = "Needs Review" if low and src.origin == "admin" else "Ready"
         src.stage = 6
         src.updated_at = datetime.now(timezone.utc)
