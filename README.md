@@ -238,3 +238,8 @@ design/             the original design files this UI was built from
 - Voice questions load the Whisper model into the API the first time someone speaks. With the default `WHISPER_MODEL=small`, that is about 0.5 GB of RAM, and a short question takes 1–3 seconds on a laptop CPU. Use `base` for less memory, or `medium` for better Hindi.
 - Hindi and Hinglish work end to end (multilingual embeddings, Whisper, prompt language). For scanned Hindi textbooks, the image includes Tesseract's Hindi data.
 - Class levels are normalised ("10", "Grade 10" and "Class 10" are the same class), so curriculum entered by staff always matches what students pick.
+
+## Project overview
+
+[Read the IntelliNova project overview (PDF)](docs/IntelliNova-Project-Overview.pdf)
+
