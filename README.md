@@ -101,7 +101,6 @@ If a YouTube link fails with **"Sign in to confirm you're not a bot"**, YouTube 
 - **Test set.** The held-out questions the harness scores. Each in-material question has a reference answer and the page, slide or timestamp where the answer is. Off-material questions check that the tutor declines.
   - **Import** a CSV or JSON file written by your team. Download the **CSV template** from the same dialog. Separate several locations with `;`.
   - **Draft from material** writes questions from processed sources, each tagged with its real location. Check and edit them before you rely on the numbers.
-  - `samples/eval-testset-electricity.csv` is a ready test set (26 questions) for `samples/IntelliNova-sample-Electricity.pdf`. See `samples/README.md`.
 - **Question bank.** The simulated-student check runs on the real quiz engine once a topic has 8 or more verified MCQ/numerical questions. **Prepare** writes them from each topic's material and verifies every one with the second model and the solver. Without them, the simulation falls back to a statistical model and says so.
 - **Results.** Pick RAGAS, DeepEval or TruLens and **Run evaluation**. You get:
   - the six headline metrics with targets and trend;
@@ -228,7 +227,6 @@ web/
   scripts/          build-icon-font.py (subsets the Material Symbols font)
 infra/              Caddyfile, Postgres init script
 windows/            Start / Stop / Update IntelliNova.bat (double-click shortcuts)
-samples/            sample textbook PDF and a ready evaluation test set
 design/             the original design files this UI was built from
 ```
 
