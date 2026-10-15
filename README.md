@@ -6,7 +6,7 @@
 
 IntelliNova turns a school's own textbooks, slide decks and lecture videos into a tutor that cites the exact page, slide, figure or video moment behind every answer. It also tracks what each student knows and how fast they are forgetting it, and plans what they should study next. Every model (language, vision, speech, embeddings) runs locally through Ollama, so no student data is sent to a third-party AI API.
 
-[▶ Demo video: INSERT YOUTUBE LINK] · [📄 Project overview (PDF)](docs/IntelliNova-Project-Overview.pdf) · [⚙ Setup guide](docs/SETUP.md) · [🏗 Architecture details](docs/ARCHITECTURE.md)
+[📄 Project overview (PDF)](docs/IntelliNova-Project-Overview.pdf) · [⚙ Setup guide](docs/SETUP.md) · [🏗 Architecture details](docs/ARCHITECTURE.md)
 
 > **Demo scope.** IntelliNova runs a large language model, a vision model, speech recognition and an evaluation judge on a single machine. To keep the demo responsive on a laptop GPU (8 GB), we limited the demo content to one subject: **CBSE Class 10 Science, chapter "Electricity"**. Nothing in the system is tied to one subject. Boards, classes, subjects and chapters are data that staff add in the curriculum builder.
 
@@ -136,75 +136,42 @@ flowchart LR
 
 ## Evaluation Results
 
-All metrics are produced by **Admin › Evaluation** and can be downloaded as a Markdown report or CSV. The harness uses a held-out test set with reference answers and the expected source location of each answer, plus off-material questions that the tutor should decline.
+Every metric below is produced by **Admin › Evaluation** on a held-out test set. Each in-material question has a reference answer and the page, slide or timestamp where the answer is. Off-material questions check that the tutor declines. A run can be downloaded as a Markdown report or CSV.
 
-**Run configuration:** generator `llama3.1:8b` · judge `qwen2.5:7b` · embeddings `intfloat/multilingual-e5-small` · re-ranker `cross-encoder/mmarco-mMiniLMv2` · top-k 6 · context 8,192 tokens · test set: [INSERT N] questions, [INSERT N] off-material.
-
-| Metric | Framework | Target | Result |
+| Metric | Measured by | What it checks | Target |
 |---|---|---|---|
-| Faithfulness | RAGAS | 0.85 | [INSERT VALUE] |
-| Answer relevancy | RAGAS | 0.85 | [INSERT VALUE] |
-| Context precision | RAGAS | 0.80 | [INSERT VALUE] |
-| Context recall | RAGAS | 0.80 | [INSERT VALUE] |
-| Faithfulness | DeepEval | 0.85 | [INSERT VALUE] |
-| Answer relevancy | DeepEval | 0.85 | [INSERT VALUE] |
-| Contextual precision | DeepEval | 0.80 | [INSERT VALUE] |
-| Contextual recall | DeepEval | 0.80 | [INSERT VALUE] |
-| Citation accuracy (expected vs cited location) | IntelliNova | 0.85 | [INSERT VALUE] |
-| Off-material handling (correctly declined or labelled) | IntelliNova | 0.90 | [INSERT VALUE] |
-| Question verification rate (verified ÷ generated) | IntelliNova | n/a | [INSERT VALUE] |
-| Weak-topic detection accuracy | IntelliNova (planned metric) | n/a | [INSERT VALUE] |
-| Average / 90th-percentile answer time | IntelliNova | n/a | [INSERT VALUE] s / [INSERT VALUE] s |
+| **Faithfulness** | RAGAS / DeepEval / TruLens | Every claim in the answer is supported by the retrieved sources | 0.85 |
+| **Answer relevancy** | RAGAS / DeepEval / TruLens | The answer addresses the question that was asked | 0.85 |
+| **Context precision** | RAGAS / DeepEval / TruLens | The retrieved passages are the relevant ones, ranked first | 0.80 |
+| **Context recall** | RAGAS / DeepEval | The retrieved passages contain what the reference answer needs | 0.80 |
+| **Citation accuracy** | IntelliNova | The cited page, slide or timestamp matches where the answer really is | 0.85 |
+| **Off-material handling** | IntelliNova | Questions the material doesn't cover are declined or clearly labelled | 0.90 |
+| **Question verification rate** | IntelliNova | Share of generated questions that pass the SymPy re-derivation and the second-model check | Reported |
+| **Answer time** | IntelliNova | Average and 90th-percentile time to a grounded answer | Reported |
+| **Weak-topic detection accuracy** | IntelliNova *(planned)* | Agreement between the learner model's *Weak* status and the simulated students' hidden ability | Planned |
 
-> Scores depend on the local models and the test set. When a framework can't produce a metric (TruLens has no context recall, for example), IntelliNova's built-in LLM judge fills it in and the run page says how many. Weak-topic detection accuracy is not yet computed by the harness. It is planned as agreement between the learner model's *Weak* status and the simulated students' hidden ability.
+**Run configuration:** generator `llama3.1:8b` · judge `qwen2.5:7b` (local, through Ollama) · embeddings `intfloat/multilingual-e5-small` · re-ranker `cross-encoder/mmarco-mMiniLMv2` · top-k 6 · context 8,192 tokens.
+
+When a framework can't produce a metric (TruLens has no context recall, for example), IntelliNova's built-in LLM judge fills it in and the run page says how many. Results depend on the local models and the test set, so we re-run the harness after every model or prompt change.
 
 ---
 
 ## Results & Benchmarks
 
-### Retrieval evaluation
+The harness benchmarks four layers of the system, each with its own drill-down on the results page.
 
-| Measure | Result |
-|---|---|
-| Context precision (RAGAS) | [INSERT VALUE] |
-| Context recall (RAGAS) | [INSERT VALUE] |
-| Citation accuracy by source type: textbook page / slide / video timestamp / figure | [INSERT VALUE] / [INSERT VALUE] / [INSERT VALUE] / [INSERT VALUE] |
+| Layer | What is benchmarked | How |
+|---|---|---|
+| **Retrieval** | Context precision and recall. Citation accuracy split by source type (textbook page, slide, video timestamp, figure). | Expected source locations in the test set are compared with the locations the tutor actually cited. |
+| **Grounding** | Faithfulness, the share of in-material questions answered from the material, and off-material questions declined or labelled. | Sentence-level support check, plus RAGAS / DeepEval / TruLens judges. |
+| **Assessment quality** | Questions generated, verified by both checks, held back because the models disagreed, rejected by the SymPy solver, near-duplicates removed. | Every generated question passes through the same pipeline that serves students. |
+| **Learner model** | Mastery gain under adaptive difficulty versus a fixed-difficulty baseline, and the question-repetition rate. | Six simulated student profiles with hidden IRT ability take quizzes through the **live quiz engine** (question picking, grading, BKT/FSRS updates, repeat avoidance), inside a transaction that is rolled back. |
 
-### Grounding evaluation
+**Simulated profiles:** struggling with maths · strong, fast learner · Hindi-first learner · irregular, skips days · new student with no history · exam in two weeks. For each profile, the results page plots mastery over the sessions for the adaptive engine and the fixed baseline. It also reports start mastery, end mastery, gain and repetition.
 
-| Measure | Result |
-|---|---|
-| Faithfulness (RAGAS / DeepEval) | [INSERT VALUE] / [INSERT VALUE] |
-| Share of in-material questions answered from material | [INSERT VALUE] |
-| Off-material questions declined or labelled | [INSERT VALUE] |
+The simulation runs on the real quiz engine once each topic has at least 8 verified MCQ or numerical questions (**Question bank › Prepare**). Until then it falls back to a statistical model and labels the run accordingly.
 
-### Assessment quality (question bank checks)
-
-| Measure | Result |
-|---|---|
-| Questions generated | [INSERT VALUE] |
-| Verified by both checks (solver + second model) | [INSERT VALUE] |
-| Held back: models disagreed | [INSERT VALUE] |
-| Rejected by the SymPy solver | [INSERT VALUE] |
-| Near-duplicates removed | [INSERT VALUE] |
-
-### Learner-model evaluation and simulation results
-
-Six profiles × [INSERT N] sessions, run through the live quiz engine.
-
-| Profile | Start mastery | End mastery | Gain | Question repetition |
-|---|---|---|---|---|
-| Struggling with maths | [INSERT VALUE] | [INSERT VALUE] | [INSERT VALUE] | [INSERT VALUE] |
-| Strong, fast learner | [INSERT VALUE] | [INSERT VALUE] | [INSERT VALUE] | [INSERT VALUE] |
-| Hindi-first learner | [INSERT VALUE] | [INSERT VALUE] | [INSERT VALUE] | [INSERT VALUE] |
-| Irregular, skips days | [INSERT VALUE] | [INSERT VALUE] | [INSERT VALUE] | [INSERT VALUE] |
-| New student, no history | [INSERT VALUE] | [INSERT VALUE] | [INSERT VALUE] | [INSERT VALUE] |
-| Exam in two weeks | [INSERT VALUE] | [INSERT VALUE] | [INSERT VALUE] | [INSERT VALUE] |
-| **Mean mastery gain: adaptive vs fixed baseline** | | | **[INSERT VALUE] vs [INSERT VALUE]** | |
-
-> The simulation runs on the real quiz engine once each topic has at least 8 verified MCQ or numerical questions (**Question bank › Prepare**). Until then it falls back to a statistical model and labels the run accordingly.
-
-**Reproduce:** Admin › Evaluation › Test set (Import or Draft from material) › Question bank › Prepare › Results › choose RAGAS, DeepEval or TruLens › **Run evaluation** › **Report**.
+**Reproduce:** Admin › Evaluation › Test set (Import CSV/JSON, or Draft from material) › Question bank › Prepare › Results › choose RAGAS, DeepEval or TruLens › **Run evaluation** › **Report**.
 
 ---
 
@@ -323,7 +290,7 @@ The sequence we recommend for judges, about 5 minutes, chosen to show the most v
 | 4:00 | **Admin › Evaluation › Results**: metrics vs targets, per-question results, question-bank checks, simulated students. | Quantitative system evaluation |
 | 4:45 | Download the **Report**. | Reproducible, auditable results |
 
-A recorded walkthrough of the full flow (8½ minutes, subtitled) is linked at the top of this page.
+A recorded, subtitled walkthrough of the full flow (8½ minutes) accompanies this submission.
 
 ---
 
