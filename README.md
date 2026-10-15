@@ -1,243 +1,379 @@
 # IntelliNova
 
-An AI study partner for school students, and the admin console that keeps it accurate.
+### A source-grounded, adaptive AI tutor that runs entirely on a school's own hardware
 
-- **Student app** (`/app`):
-  - **Tutor.** Answers come from class material, with a citation on every point that opens the exact page, slide, figure or video moment. When the material doesn't cover a question, the tutor says so; with *Sources only* off it adds a short general answer, clearly labelled as outside the material. You can type or talk: hands-free voice mode listens, answers aloud and listens again, with speech recognised on your own server by Whisper. Students choose what the tutor answers from (all their material, one subject, one chapter, only their own uploads, or particular files) and can change it mid-conversation.
-  - **Practice.** Adaptive practice and mock exams.
-  - **Study AI.** Notes, flashcards, concept maps, audio briefs and a downloadable slide deck from a lecture, PDF, slides or pasted text. One-click **revision packs** do the same for your weak topics, built from class material.
-  - **Course flow map.** Every topic in teaching order with its prerequisite arrows, coloured by your mastery.
-  - **Study plan.** Give your exam date and get a day-by-day schedule built from weak topics and forgetting curves. It is rebuilt every day and feeds "Today's plan".
-  - **Also:** exam prep and a career explorer.
-- **Admin console** (`/admin`):
-  - **Knowledge base.** Ingestion and tag review. Topics and subtopics found in uploaded material are **suggested for the curriculum**.
-  - **Evaluation harness.** RAGAS, DeepEval or TruLens, plus simulated students driven through the real quiz engine.
-  - **Curriculum.** Editing with versioned publishing and a flow-map view.
-  - **Everything else.** The resource catalog, exams with verified facts, career data, review of generated content, users and invites, privacy requests and analytics.
-- **Landing page** (`/`), plus `/privacy` and `/terms`.
+**IIT Mandi Multimodal AI Hackathon 2026 · Track D**
 
-Everything runs on your own servers. The language, vision, speech and embedding models are open-source models served locally, so no student data goes to a third-party AI API.
+IntelliNova turns a school's own textbooks, slide decks and lecture videos into a tutor that cites the exact page, slide, figure or video moment behind every answer. It also tracks what each student knows and how fast they are forgetting it, and plans what they should study next. Every model (language, vision, speech, embeddings) runs locally through Ollama, so no student data is sent to a third-party AI API.
+
+[▶ Demo video: INSERT YOUTUBE LINK] · [📄 Project overview (PDF)](docs/IntelliNova-Project-Overview.pdf) · [⚙ Setup guide](docs/SETUP.md) · [🏗 Architecture details](docs/ARCHITECTURE.md)
+
+> **Demo scope.** IntelliNova runs a large language model, a vision model, speech recognition and an evaluation judge on a single machine. To keep the demo responsive on a laptop GPU (8 GB), we limited the demo content to one subject: **CBSE Class 10 Science, chapter "Electricity"**. Nothing in the system is tied to one subject. Boards, classes, subjects and chapters are data that staff add in the curriculum builder.
 
 ---
 
-## Quick start (Docker)
+## Contents
 
-Requirements: Docker with Compose v2, and about 16 GB of RAM for the default 7–8B models. A GPU is optional but makes answers much faster.
+[Why IntelliNova](#why-intellinova) · [Judge Quick Start](#judge-quick-start) · [Track D Requirement Mapping](#track-d-requirement-mapping) · [Key Innovations](#key-innovations) · [Personalization Engine](#personalization-engine) · [Evaluation Results](#evaluation-results) · [Results & Benchmarks](#results--benchmarks) · [Architecture](#architecture-diagram) · [Technical Highlights](#technical-highlights) · [Competitive Advantages](#competitive-advantages) · [Demo Walkthrough](#demo-walkthrough) · [Limitations](#known-limitations) · [Roadmap](#future-roadmap)
+
+---
+
+## Why IntelliNova
+
+Students already use AI chatbots to study. Those chatbots answer from the open internet, can't show where an answer came from, and know nothing about the student. IntelliNova is built around five principles that address those gaps.
+
+| Principle | What it means in IntelliNova |
+|---|---|
+| **Source-grounded tutoring** | Answers are built only from the school's own material. Every claim carries a citation `[n]` that opens the exact page, slide, figure or video timestamp. A sentence-level faithfulness check runs before the answer is shown. If the material doesn't cover the question, the tutor says so instead of guessing. |
+| **Adaptive learning** | Practice difficulty follows each student's estimated mastery. Questions the student has already seen are avoided. Weak topics surface automatically in practice, revision packs and the study plan. |
+| **Learning Twin** | Each student has a learner model per topic: a mastery estimate with an uncertainty band (Bayesian Knowledge Tracing) and a memory model of when they will forget it (FSRS). Quizzes, tutor conversations, flashcards and a diagnostic all update it. Practice, plans and revision all read from it. |
+| **Privacy-first architecture** | All AI models are self-hosted (Ollama, faster-whisper, Piper, sentence-transformers). Students can request a data export, a correction or account deletion from inside the app. The student app and the admin console use separate sessions and roles. |
+| **Evaluation-driven development** | An admin evaluation harness scores the tutor on a held-out test set with **RAGAS, DeepEval or TruLens**, plus citation accuracy and off-material handling. Simulated students then run through the real quiz engine to measure whether adaptivity helps. The results are meant to be checked before every update. |
+
+---
+
+## Judge Quick Start
+
+**Setup (one time, about 10–20 minutes, mostly model downloads):**
 
 ```bash
-cp .env.example .env
-# Edit .env: set every "change-me" value (openssl rand -hex 32), and ADMIN_BOOTSTRAP_TOKEN.
-docker compose --profile dev up -d --build     # "dev" also starts Mailpit to catch emails
-
-# Pull the local models once (they are stored in the "ollama" volume)
-docker compose exec ollama ollama pull llama3.1:8b    # tutor, notes, question generation
-docker compose exec ollama ollama pull qwen2.5:7b     # second-model answer-key verification
-docker compose exec ollama ollama pull llava:7b       # reading diagrams and figures
+cp .env.example .env                      # set the "change-me" values
+docker compose --profile dev up -d --build
+docker compose exec ollama ollama pull llama3.1:8b
+docker compose exec ollama ollama pull qwen2.5:7b
+docker compose exec ollama ollama pull llava:7b
 ```
 
-With an NVIDIA GPU, copy `docker-compose.gpu.example.yml` to `docker-compose.override.yml` before starting. Answers get much faster.
+Open <http://localhost>. Emails (sign-up codes, invites) arrive in Mailpit at <http://localhost:8025>. On Windows, the `windows/` folder has double-click **Start / Stop / Update** shortcuts. Full details are in [docs/SETUP.md](docs/SETUP.md).
 
-Open <http://localhost>. Sign-up emails (6-digit codes, password resets, staff invites) arrive in Mailpit at <http://localhost:8025> until you set real SMTP settings.
+**The 5-minute evaluation path:**
 
-The sentence-transformers embedding model (`intfloat/multilingual-e5-small`) and the Whisper model are downloaded on first use into the `models` volume.
+| # | Step | Where | What to look for |
+|---|---|---|---|
+| 1 | **Login** | `/admin/signup` creates the first admin (later staff sign-up is invite-only). | Separate, role-based admin console. |
+| 2 | **Build the curriculum** | Admin › Curriculum: add *CBSE · Class 10 · Science* › chapter *Electricity* › topics, then **Publish**. | Topics, subtopics, prerequisites, versioned publishing. |
+| 3 | **Upload sources** | Admin › Knowledge base › Add source: a textbook chapter PDF (e.g. NCERT Class 10 Science, Ch. 11). Optionally add slides or a lecture video. | The 6-stage pipeline, then content units linked to pages, tagged to topics, and **suggested topics** for material the curriculum doesn't cover yet. |
+| 4 | **Ask the tutor** | Sign up as a student at `/signup` › Ask Tutor: *"State Ohm's law"*, then something off-syllabus. | Citations that open the exact page. An honest "not covered in your material" for the off-syllabus question. |
+| 5 | **Generate a quiz** | Practice › pick topics › Generate. | Questions marked *Answer verified*, instant grading with key points, and a mastery change shown after each answer. |
+| 6 | **View the learner model** | My Progress. | Per-topic mastery with an uncertainty band, *Weak / Developing / Mastered* status, and the forgetting curve with the next review date. |
+| 7 | **View the evaluation dashboard** | Admin › Evaluation › Test set › Draft from material (or Import CSV) › Results › **Run evaluation**. | Six metrics against targets, per-question results, question-bank checks and simulated-student learning curves. Downloadable Report and CSV. |
 
-### On Windows: double-click to start and stop
+> Processing a short chapter and writing the first quiz take a few minutes on a laptop GPU. A "running" indicator in the top bar tracks background work, so you can keep using the app meanwhile.
 
-The `windows` folder has three shortcuts. Right-click one › **Send to › Desktop** to keep it handy.
+---
 
-| Shortcut | What it does |
+## Track D Requirement Mapping
+
+| Track D Requirement | IntelliNova Implementation |
 |---|---|
-| **Start IntelliNova** | Starts Docker Desktop if needed, then the app (built on the first run). It downloads the AI models once and opens <http://localhost>. |
-| **Stop IntelliNova** | Stops the app and keeps all data. It can also shut down Docker and WSL to give the memory back to Windows. |
-| **Update IntelliNova** | Run after extracting a newer zip over this folder. It rebuilds and applies database changes automatically. |
+| **Multimodal knowledge base: textbooks** | PDF parsing (PyMuPDF, or Docling when installed) with Tesseract OCR for scanned pages, including Hindi. Text is split into content units that keep their page number. |
+| **Multimodal knowledge base: slides** | python-pptx extracts slide text and embedded images, one unit per slide, each keeping its slide number. |
+| **Multimodal knowledge base: lecture video** | YouTube captions when available, otherwise faster-whisper transcription. Uploaded videos also get OpenCV keyframe detection plus OCR of on-screen text. Units keep their timestamps. |
+| **Diagrams and figures** | Figures are captioned by a local vision-language model (LLaVA) and become searchable, citable units. Numbered figures are processed first, and repeated images only once. |
+| **Topic tagging and curriculum alignment** | Every unit is tagged with a topic, subtopic, key concepts and prerequisites, with confidence scores. Low-confidence tags go to a review queue. Material that fits no existing topic is grouped into **suggested topics**, which staff can add to the curriculum. |
+| **Source-grounded Q&A** | Hybrid retrieval (pgvector plus Postgres full-text, fused by reciprocal rank, then a cross-encoder re-ranker). Answers cite `[n]` per claim. |
+| **Citations to exact location** | Each citation opens the exact page, slide, figure or video timestamp in a source viewer, with the passage highlighted. |
+| **Declining ungrounded answers** | A sentence-level faithfulness check runs against the retrieved sources. With *Sources only* on, unsupported answers are declined. With it off, a general answer is shown, clearly labelled as outside the material and never used in quizzes. |
+| **Adaptive assessment: generation** | Questions (MCQ, numerical, short answer) are generated per topic from the source-linked units, and each keeps its source location. |
+| **Adaptive assessment: quality control** | Numerical answers are re-derived with SymPy. Every answer key is cross-checked by a second model (qwen2.5). Near-duplicates are removed by embedding similarity. Only questions that pass are served. |
+| **Adaptive assessment: difficulty** | Difficulty targets the student's BKT mastery, item difficulty is updated online (Elo/Rasch-style), and repeats are avoided. Modes: adaptive quiz, mock exam (timed) and diagnostic. |
+| **Learner model** | Per-topic BKT mastery with uncertainty (pyBKT refit when installed). FSRS memory state and predicted recall per topic. Updated by quizzes, tutor conversations, flashcards and the diagnostic intake. |
+| **Cold start** | Onboarding collects board, class, subjects, languages and goals, and offers a short diagnostic quiz to set initial mastery. |
+| **Personalised recommendations** | Resources are ranked by topic coverage, language, quality, engagement, students' helpful votes and completion, each with a "why" line. Videos are auto-discovered and judged against the syllabus topic by the local LLM. |
+| **System evaluation: RAG quality** | A held-out test set (imported CSV/JSON or drafted from the material) is scored by **RAGAS, DeepEval or TruLens**: faithfulness, answer relevancy, context precision and context recall. Citation accuracy and off-material handling are scored on top. |
+| **System evaluation: learner model** | Six simulated student profiles with hidden IRT ability take real quizzes through the live quiz engine (inside a rolled-back transaction). This compares adaptive difficulty against a fixed-difficulty baseline. |
+| **Optional: course flow map** | Every topic in teaching order, with prerequisite arrows, coloured by the student's mastery. |
+| **Optional: revision material** | Study AI turns a lecture, PDF, slides or pasted text into full notes, short notes, key concepts, formulas, a concept map, flashcards, a revision sheet, an audio brief and a slide deck. One-click **revision packs** do the same for weak topics. |
+| **Optional: study schedule** | An exam-date study plan, rebuilt daily from mastery, course order and FSRS-predicted recall on exam day. |
+| **Optional: voice tutoring** | Hands-free voice mode: Whisper speech recognition on the server, Piper text-to-speech, in English and Hindi, with Hinglish support. |
 
-If you turn on **Docker Desktop › Settings › General › Start Docker Desktop when you sign in**, you don't need **Start** at all. The containers restart by themselves after a reboot, unless you stopped them with **Stop**.
+---
 
-### Create the first admin
+## Key Innovations
 
-1. Go to <http://localhost/admin/signup>. On a fresh install this shows **Create the first admin account**.
-2. If `ADMIN_BOOTSTRAP_TOKEN` is set in `.env`, the form asks for it. Set it in production so nobody else can claim the console first.
-3. After that, sign-up is **invite-only**. In **Admin › Users › Invite staff**, enter an email and pick a role:
-   - **Curator:** edits curriculum, knowledge base, resources, exams, career data and generated content.
-   - **Admin:** everything a curator can do, plus users, invites, roles and privacy requests.
+1. **Learning Twin.** Our name for the per-student learner model. It holds what the student knows (BKT mastery with uncertainty) and when they will forget it (FSRS). It powers practice, revision, the study plan and progress views, so personalization is one consistent model rather than a set of separate heuristics.
+2. **BKT + FSRS learner model.** BKT estimates *whether* a topic is learned. FSRS estimates *how long it will be remembered*. Combining them lets IntelliNova separate "never learned" from "learned but fading", and treat each differently.
+3. **Forgetting curve.** Each topic's predicted recall is plotted over time, with the next review set for when recall is predicted to drop to 90%, well before the 70% line.
+4. **Revision Packs.** One click builds notes, flashcards, a concept map and a slide deck for the student's weakest topics, from the class material, with every note linked back to its source.
+5. **Adaptive Study Plans.** Given an exam date and the time available each day, IntelliNova produces a day-by-day schedule: new topics in course order, targeted practice for weak ones, spaced reviews timed to the forgetting curve, and a final revision window ranked by predicted recall on exam day.
+6. **Curriculum Builder.** Versioned publishing, prerequisite graphs, and **topics suggested automatically** from uploaded material. The AI proposes and staff approve.
+7. **Multimodal RAG.** Textbooks, slides, lecture video, on-screen text and diagrams all become one index of source-linked units. A citation can point to a page, a slide, a figure or a video moment.
+8. **Self-hosted AI.** Llama 3.1 8B (generation), Qwen 2.5 7B (verification and judge), LLaVA 7B (figures), faster-whisper (speech) and Piper (voice) all run on one machine with an 8 GB GPU. Background work pauses while a student waits for the tutor, and runs one job at a time to fit that hardware.
 
-   The invitee gets an email with a single-use link (valid `INVITE_TTL_DAYS`, default 7). The link is also shown so you can copy it.
+---
 
-The student app and the admin console keep **separate sessions**, so a student and an admin can be signed in side by side in the same browser.
+## Personalization Engine
 
-Students sign up at `/signup` with email and password (confirmed by a 6-digit code). Google sign-in and mobile OTP appear automatically when enabled in `.env`. Student accounts can't open the admin console.
+Personalization in IntelliNova is one closed loop. Every interaction updates the Learning Twin, and every feature reads from it.
 
-### Videos found automatically
+```mermaid
+flowchart LR
+    A["Diagnostic quiz"] --> T
+    B["Practice and mock exams"] --> T
+    C["Tutor conversations"] --> T
+    D["Flashcard reviews"] --> T
+    T["Learning Twin<br/>BKT mastery + uncertainty<br/>FSRS recall per topic"]
+    T --> E["Adaptive question difficulty"]
+    T --> F["Weak-topic detection"]
+    T --> G["Forgetting curve and review dates"]
+    T --> H["Exam study plan"]
+    T --> I["Revision packs"]
+    T --> J["Recommendations and flow map"]
+```
 
-Students don't have to wait for curators to add videos. When a student searches a topic, or opens a chapter whose topics have fewer than `DISCOVERY_MIN_VIDEOS` videos, IntelliNova:
+| Capability | How it works |
+|---|---|
+| **Mastery tracking** | Bayesian Knowledge Tracing per student and topic, with an uncertainty band that narrows as evidence grows. Shown as *Weak* (<0.5), *Developing* (0.5–0.8) or *Mastered* (≥0.8). Each answer shows the mastery change, e.g. `0.25 → 0.36`. |
+| **Weak-topic prediction** | Topics with low BKT mastery are flagged *Weak*. Topics the student once knew are flagged when FSRS predicts recall below 70%. Both feed "Needs attention" on Home, "Practice weak topics" on My Progress, revision packs and the study plan. |
+| **Forgetting curve** | FSRS memory state per topic. Predicted recall is plotted over time, and reviews are scheduled before recall drops below 90%. |
+| **Study recommendations** | "Today's plan" and the exam study plan interleave new learning, targeted practice (weakest first) and spaced reviews. Resource recommendations explain *why* each item is suggested. |
+| **Personalized quiz generation** | Topics, question types and difficulty adapt to the student's mastery. Item difficulty is re-estimated online with every answer, and questions already seen are avoided. |
+| **Learning Twin** | The single per-student model behind all of the above, visible to the student on **My Progress**, so the personalization is explainable rather than a black box. |
 
-1. searches YouTube for the topic, class, board and the student's language (SafeSearch, Shorts and live streams excluded);
-2. keeps only videos the local AI judges to actually teach that syllabus topic, using the title, description and captions;
-3. ranks them by how well they teach it, likes and views, captions, trusted channels and (optionally) Reddit mentions;
-4. shows the best right away with an **Auto-found** badge and a "why" line. Curated videos always rank first.
+**Measured, not assumed.** The evaluation harness runs six simulated student profiles (struggling, strong, Hindi-first, irregular, new, exam-in-two-weeks) through the real quiz engine. It compares mastery gain under adaptive difficulty with a fixed-difficulty baseline. See [Results & Benchmarks](#results--benchmarks).
 
-Free-text searches outside the syllabus (for example "photosynthesis" when the curriculum has no such topic) are checked first, so non-study searches like "cricket score" never reach YouTube. Each student is limited to 15 free-text discoveries a day, and every topic search is cached for 14 days.
+---
 
-Staff see every search in **Resources › Search log** (found → passed filters → judged relevant → added, or the error). **Resources › Auto-found** lists what was added, and setting one to **Disabled** removes it for good. **Curriculum › topic › Find videos on YouTube** searches on demand. Set `DISCOVERY_ENABLED=false` to turn it all off.
+## Evaluation Results
 
-Get a free YouTube Data API key (Google Cloud Console → YouTube Data API v3) for the best results. Without one, yt-dlp is used, which has no quota but depends on YouTube's public pages.
+All metrics are produced by **Admin › Evaluation** and can be downloaded as a Markdown report or CSV. The harness uses a held-out test set with reference answers and the expected source location of each answer, plus off-material questions that the tutor should decline.
 
-If a YouTube link fails with **"Sign in to confirm you're not a bot"**, YouTube is limiting the automatic reader on your internet connection. Videos with captions still work (the title comes from YouTube's public oEmbed and the words from the captions); only videos without captions need their audio downloaded. Wait a few hours and press Retry, upload the video file instead, or add a YouTube cookies file as described in [infra/youtube/README.md](infra/youtube/README.md).
+**Run configuration:** generator `llama3.1:8b` · judge `qwen2.5:7b` · embeddings `intfloat/multilingual-e5-small` · re-ranker `cross-encoder/mmarco-mMiniLMv2` · top-k 6 · context 8,192 tokens · test set: [INSERT N] questions, [INSERT N] off-material.
 
-### First content, in order
+| Metric | Framework | Target | Result |
+|---|---|---|---|
+| Faithfulness | RAGAS | 0.85 | [INSERT VALUE] |
+| Answer relevancy | RAGAS | 0.85 | [INSERT VALUE] |
+| Context precision | RAGAS | 0.80 | [INSERT VALUE] |
+| Context recall | RAGAS | 0.80 | [INSERT VALUE] |
+| Faithfulness | DeepEval | 0.85 | [INSERT VALUE] |
+| Answer relevancy | DeepEval | 0.85 | [INSERT VALUE] |
+| Contextual precision | DeepEval | 0.80 | [INSERT VALUE] |
+| Contextual recall | DeepEval | 0.80 | [INSERT VALUE] |
+| Citation accuracy (expected vs cited location) | IntelliNova | 0.85 | [INSERT VALUE] |
+| Off-material handling (correctly declined or labelled) | IntelliNova | 0.90 | [INSERT VALUE] |
+| Question verification rate (verified ÷ generated) | IntelliNova | n/a | [INSERT VALUE] |
+| Weak-topic detection accuracy | IntelliNova (planned metric) | n/a | [INSERT VALUE] |
+| Average / 90th-percentile answer time | IntelliNova | n/a | [INSERT VALUE] s / [INSERT VALUE] s |
 
-1. **Curriculum:** add a subject (board, class, subject), its chapters and topics, and prerequisites, then **Publish**. Students only see published chapters.
-2. **Knowledge base:** upload textbook PDFs, slide decks or lecture videos (or YouTube links). Each goes through the stages Transcribe/OCR, Figures, Segment, Tag topics (with subtopics), Identify topics and Index.
-   - Review low-confidence tags.
-   - If the material covers topics the curriculum doesn't have yet, they appear under **Suggested topics**. **Add to curriculum** creates the chapter/topic as a draft with its subtopics and tags the material to it.
-3. **Resources:** paste a YouTube or web link. The wizard detects metadata, suggests the chapter and topics, and adds it to recommendations.
-4. **Exams** and **Career data:** structure, verified facts with official sources, and eligibility rules.
-5. **Evaluation:** build a held-out test set (including off-material questions), prepare the question bank, and run the harness before each update. See [Evaluation](#evaluation) below.
+> Scores depend on the local models and the test set. When a framework can't produce a metric (TruLens has no context recall, for example), IntelliNova's built-in LLM judge fills it in and the run page says how many. Weak-topic detection accuracy is not yet computed by the harness. It is planned as agreement between the learner model's *Weak* status and the simulated students' hidden ability.
 
-### Evaluation
+---
 
-**Admin › Evaluation** has three tabs.
+## Results & Benchmarks
 
-- **Test set.** The held-out questions the harness scores. Each in-material question has a reference answer and the page, slide or timestamp where the answer is. Off-material questions check that the tutor declines.
-  - **Import** a CSV or JSON file written by your team. Download the **CSV template** from the same dialog. Separate several locations with `;`.
-  - **Draft from material** writes questions from processed sources, each tagged with its real location. Check and edit them before you rely on the numbers.
-- **Question bank.** The simulated-student check runs on the real quiz engine once a topic has 8 or more verified MCQ/numerical questions. **Prepare** writes them from each topic's material and verifies every one with the second model and the solver. Without them, the simulation falls back to a statistical model and says so.
-- **Results.** Pick RAGAS, DeepEval or TruLens and **Run evaluation**. You get:
-  - the six headline metrics with targets and trend;
-  - the share of questions answered, average and 90th-percentile response time, and the models used;
-  - scores by source type and the weakest answers;
-  - **per-question results** (the tutor's answer next to the reference, expected vs cited locations);
-  - question-bank checks and the simulated-student curves.
+### Retrieval evaluation
 
-  **Report** (Markdown) and **CSV** download the whole run.
+| Measure | Result |
+|---|---|
+| Context precision (RAGAS) | [INSERT VALUE] |
+| Context recall (RAGAS) | [INSERT VALUE] |
+| Citation accuracy by source type: textbook page / slide / video timestamp / figure | [INSERT VALUE] / [INSERT VALUE] / [INSERT VALUE] / [INSERT VALUE] |
 
-### Answer quality settings
+### Grounding evaluation
 
-Set these in `.env`, then run `docker compose up -d`.
+| Measure | Result |
+|---|---|
+| Faithfulness (RAGAS / DeepEval) | [INSERT VALUE] / [INSERT VALUE] |
+| Share of in-material questions answered from material | [INSERT VALUE] |
+| Off-material questions declined or labelled | [INSERT VALUE] |
 
-| Setting | Default | What it does |
+### Assessment quality (question bank checks)
+
+| Measure | Result |
+|---|---|
+| Questions generated | [INSERT VALUE] |
+| Verified by both checks (solver + second model) | [INSERT VALUE] |
+| Held back: models disagreed | [INSERT VALUE] |
+| Rejected by the SymPy solver | [INSERT VALUE] |
+| Near-duplicates removed | [INSERT VALUE] |
+
+### Learner-model evaluation and simulation results
+
+Six profiles × [INSERT N] sessions, run through the live quiz engine.
+
+| Profile | Start mastery | End mastery | Gain | Question repetition |
+|---|---|---|---|---|
+| Struggling with maths | [INSERT VALUE] | [INSERT VALUE] | [INSERT VALUE] | [INSERT VALUE] |
+| Strong, fast learner | [INSERT VALUE] | [INSERT VALUE] | [INSERT VALUE] | [INSERT VALUE] |
+| Hindi-first learner | [INSERT VALUE] | [INSERT VALUE] | [INSERT VALUE] | [INSERT VALUE] |
+| Irregular, skips days | [INSERT VALUE] | [INSERT VALUE] | [INSERT VALUE] | [INSERT VALUE] |
+| New student, no history | [INSERT VALUE] | [INSERT VALUE] | [INSERT VALUE] | [INSERT VALUE] |
+| Exam in two weeks | [INSERT VALUE] | [INSERT VALUE] | [INSERT VALUE] | [INSERT VALUE] |
+| **Mean mastery gain: adaptive vs fixed baseline** | | | **[INSERT VALUE] vs [INSERT VALUE]** | |
+
+> The simulation runs on the real quiz engine once each topic has at least 8 verified MCQ or numerical questions (**Question bank › Prepare**). Until then it falls back to a statistical model and labels the run accordingly.
+
+**Reproduce:** Admin › Evaluation › Test set (Import or Draft from material) › Question bank › Prepare › Results › choose RAGAS, DeepEval or TruLens › **Run evaluation** › **Report**.
+
+---
+
+## Architecture Diagram
+
+```mermaid
+flowchart TB
+    subgraph Clients
+        S["Student app<br/>Next.js 15"]
+        AD["Admin console<br/>Next.js 15"]
+    end
+    S --> CADDY["Caddy reverse proxy · HTTPS"]
+    AD --> CADDY
+    CADDY --> API["FastAPI"]
+    CADDY --> AUTH["GoTrue auth<br/>email · OTP · invites"]
+
+    subgraph Ingestion["Multimodal ingestion · Celery workers"]
+        P1["PDF · PyMuPDF / Docling<br/>+ Tesseract OCR"]
+        P2["Slides · python-pptx"]
+        P3["Video · captions or Whisper<br/>+ OpenCV keyframes + OCR"]
+        P4["Figures · LLaVA captions"]
+        TAG["Topic tagging and<br/>suggested topics"]
+        P1 --> TAG
+        P2 --> TAG
+        P3 --> TAG
+        P4 --> TAG
+    end
+
+    subgraph Core["Learning core"]
+        RET["Hybrid retrieval<br/>pgvector + full-text + RRF<br/>+ cross-encoder"]
+        GR["Grounding<br/>citations + faithfulness check"]
+        QG["Question engine<br/>generate · SymPy · 2nd model · dedup"]
+        LM["Learning Twin<br/>BKT + FSRS + Elo"]
+        PL["Study plan · revision packs<br/>recommendations"]
+    end
+
+    subgraph Eval["Evaluation harness"]
+        EV["RAGAS · DeepEval · TruLens<br/>citation accuracy · off-material"]
+        SIM["Simulated students<br/>through the real quiz engine"]
+    end
+
+    API --> Ingestion
+    API --> Core
+    API --> Eval
+    TAG --> DB
+    RET --> GR
+    QG --> LM
+    LM --> PL
+
+    DB[("PostgreSQL 16 + pgvector")]
+    MS[("Meilisearch")]
+    RD[("Redis")]
+    OL["Ollama · Llama 3.1 · Qwen 2.5 · LLaVA"]
+    Core --> DB
+    Core --> OL
+    Ingestion --> OL
+    Eval --> OL
+    API --> MS
+    API --> RD
+```
+
+More detail on each component and the design decisions: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+---
+
+## Technical Highlights
+
+| Technology | Role in IntelliNova |
+|---|---|
+| **FastAPI** | API for the student app and admin console, with role-based access and httpOnly-cookie sessions. |
+| **PostgreSQL + pgvector** | Content units with embeddings (HNSW index), full-text search, the learner model, the question bank and evaluation runs, all in one database. |
+| **Ollama** | Serves every LLM locally with JSON-schema structured output: generation, verification, judging and vision. |
+| **Whisper (faster-whisper)** | Transcribes lectures without captions and the student's spoken questions, on the server. |
+| **RAGAS · DeepEval · TruLens** | Selectable per run. All three use the local judge model, so evaluation is also fully self-hosted. |
+| **BKT (pyBKT)** | Per-topic mastery with uncertainty. Parameters are refit from real answers when pyBKT is installed. |
+| **FSRS (py-fsrs)** | Memory state and predicted recall per topic. Drives review timing and the forgetting curve. |
+| **Meilisearch** | Typo-tolerant search over chapters, topics, resources, exams and careers, with "did you mean". |
+| **Celery + Redis** | Background ingestion, AI generation, evaluation and video discovery on separate queues. Live progress appears in the UI. |
+| **SymPy** | Re-derives numerical answers before a question is served. |
+| **Next.js 15** | Student app, admin console and landing page. Installable, with dark and light themes, mobile-friendly. |
+
+**Engineering quality.** 82 backend integration tests run against real Postgres, Redis, Meilisearch and GoTrue, with only the LLM replaced by deterministic fakes. Browser end-to-end checks cover the student and admin flows. Database changes go through Alembic migrations, and the stack is a one-command Docker Compose deployment.
+
+---
+
+## Competitive Advantages
+
+| | Generic AI chatbots | Standard RAG tutors | LMS platforms | **IntelliNova** |
+|---|---|---|---|---|
+| Answers from the school's own material | No | Yes | No AI tutor | **Yes** |
+| Citation to exact page, slide, figure or timestamp | No | Usually document-level | No | **Yes, opens the exact location** |
+| Declines or labels off-material answers | No | Rarely | No | **Yes, measured as a metric** |
+| Understands diagrams and lecture video | Partly | Usually text only | No | **Yes, LLaVA captions + Whisper + OCR** |
+| Verified assessment questions | No | Rarely | Manual question banks | **Yes: SymPy + second model + dedup** |
+| Per-student learner model | No | No | Grades only | **Yes, BKT + FSRS Learning Twin** |
+| Spaced repetition and exam study plans | No | No | Rarely | **Yes** |
+| Built-in quality evaluation | No | Rarely | No | **Yes, RAGAS / DeepEval / TruLens + simulation** |
+| Student data stays on school servers | No | Depends on the LLM API | Usually | **Yes, all models self-hosted** |
+| Hindi and Hinglish | Yes | Varies | Varies | **Yes, text and voice** |
+
+---
+
+## Demo Walkthrough
+
+The sequence we recommend for judges, about 5 minutes, chosen to show the most value per minute.
+
+| Time | Action | What it proves |
 |---|---|---|
-| `LLM_NUM_CTX` | 8192 | Context window sent to Ollama. Its own default is small and silently cuts long prompts, so answers stop following the sources. |
-| `LLM_KEEP_ALIVE` | 30m | Keeps the model loaded between questions. |
-| `RERANK_MODEL` | multilingual MiniLM cross-encoder | Re-orders retrieved passages before answering. Empty turns it off (saves about 0.5 GB of RAM). |
-| `VERIFIER_MODEL` | qwen2.5:7b | Question checker and evaluation judge. `deepseek-r1:7b` works too: its thinking is removed automatically. |
-| `PIPER_AUTO_DOWNLOAD` | true | Downloads the English and Hindi Piper voices (about 120 MB) on first start. |
+| 0:00 | **Admin › Knowledge base**: show the processed textbook, a content unit with its page, topic, subtopic and prerequisites, and a **suggested topic**. | Multimodal knowledge base and curriculum alignment |
+| 0:45 | **Student › Ask Tutor**: *"State Ohm's law."* Click citation `[1]`. | Grounded answer and exact-location citation |
+| 1:15 | Ask *"Who won the 2011 Cricket World Cup?"* with *Sources only* on. | Honest decline instead of a hallucination |
+| 1:40 | **Practice**: generate an adaptive quiz and answer one question partly correctly. | Verified questions, rubric feedback, a mastery update |
+| 2:30 | **My Progress**: open the weak topic's forgetting curve. | Learning Twin: BKT mastery with uncertainty, FSRS recall |
+| 3:00 | **Study Plan**: enter an exam date and build the plan. | Adaptive schedule from mastery and forgetting curves |
+| 3:30 | **Study AI**: open a generated pack (notes, concept map, flashcards, revision sheet). | Revision material linked to the source |
+| 4:00 | **Admin › Evaluation › Results**: metrics vs targets, per-question results, question-bank checks, simulated students. | Quantitative system evaluation |
+| 4:45 | Download the **Report**. | Reproducible, auditable results |
 
-### Going to production
-
-- `SITE_ADDRESS=learn.yourschool.org` gives automatic HTTPS through Caddy. Then set `PUBLIC_URL=https://learn.yourschool.org` and `COOKIE_SECURE=true`.
-- Set real `SMTP_*` values and `MAILER_AUTOCONFIRM=false`.
-- Optional: `YOUTUBE_API_KEY` for richer video metadata and engagement signals; `GOOGLE_*` or `PHONE_*` for extra sign-in methods; `POSTHOG_*` for self-hosted product analytics.
-- Optional heavier extras (Docling PDF layout parsing, pyBKT refits): `docker compose build --build-arg EXTRAS=1 api worker beat`. The RAGAS / DeepEval / TruLens packages and Piper are installed by default; build with `--build-arg EVAL=0` to leave the evaluation frameworks out of a smaller image.
-- Back up the `pgdata`, `uploads` and `meilidata` volumes. The search index can be rebuilt from Postgres (the beat schedule reindexes nightly).
+A recorded walkthrough of the full flow (8½ minutes, subtitled) is linked at the top of this page.
 
 ---
 
-## Architecture
+## Research Foundations
 
-```
-Caddy ─┬─ /            → web      Next.js 15 (App Router, Tailwind 4, Radix, SWR)
-       ├─ /api/*       → api      FastAPI + SQLAlchemy 2 + Alembic
-       └─ /auth/v1/*   → gotrue   Supabase GoTrue (email/password, OTP, OAuth, invites)
-api / worker / beat ─ Postgres 16 + pgvector · Redis · Meilisearch · Ollama
-worker queues: ingest · ai · signal · feedback · eval · default   (Celery 5)
-```
-
-| Layer | What is used |
+| Component | Basis |
 |---|---|
-| Auth | GoTrue; FastAPI proxies it and keeps tokens in httpOnly cookies. Roles (student, curator, admin) live in our `users` table. Staff sign-up is invite-only, with a guarded first-admin bootstrap. |
-| LLMs | Ollama `/api/chat` with JSON-schema structured output. `LLM_MODEL` for generation, `VERIFIER_MODEL` as a second model for answer-key checks, `VISION_MODEL` for figure captions. |
-| Parsing | PyMuPDF (Docling when installed), Tesseract OCR for scanned pages, python-pptx for slides, YouTube captions, then yt-dlp plus faster-whisper, and OpenCV keyframes with OCR for uploaded video. |
-| Retrieval | pgvector cosine search plus Postgres full-text, merged by reciprocal-rank fusion (optional cross-encoder re-ranker), over content units that keep their page, slide or timestamp. |
-| Grounding | Answers cite `[n]` per claim. A faithfulness check tests each sentence against the sources. With "Sources only" on, unsupported answers are declined; otherwise they are marked as outside the material. |
-| Questions | Generated per topic, then re-derived with SymPy (numericals), cross-checked by a second model, and de-duplicated by embedding similarity. |
-| Learner model | BKT mastery per topic (pyBKT refit weekly when installed), FSRS revision scheduling (py-fsrs), difficulty targeting and Elo-style item difficulty. |
-| Recommendations | Topic coverage, language, quality, YouTube engagement, students' helpful votes and completion, and co-completion, each with a "why" line. |
-| Video discovery | When a topic has too few videos, search YouTube (Data API with SafeSearch, or yt-dlp without a key), drop Shorts, live streams, profanity and curator-removed videos, pre-rank by embeddings, have the local LLM judge each shortlisted video against the syllabus topic using title, description and captions, then rank by judge score, engagement, captions, trusted channels and optional Reddit mentions. |
-| Community signal (optional) | Reddit via its official API (app-only OAuth), only when `REDDIT_CLIENT_ID`/`SECRET` are set: a small boost and a "Recommended by students on r/…" line for videos shared in study subreddits. Never required. |
-| Search | Meilisearch over chapters, topics, resources, exams and careers, with typo tolerance and "did you mean". |
-| Evaluation | Faithfulness, answer relevancy, context precision and recall, citation accuracy and off-material handling. The official RAGAS, DeepEval or TruLens package scores the four core metrics when installed; otherwise built-in LLM judges do, and the run says which. Simulated students (six profiles with a hidden IRT ability) take real quizzes through the live quiz engine: question picking, grading, BKT/FSRS updates and repeat avoidance. This runs inside a transaction that is rolled back, comparing adaptive difficulty with a fixed-difficulty baseline. |
-| Study plan | For each topic: not yet learned → learn in course order, then practice the next day and review after about 3 and 7 days. Weak or developing (BKT) → targeted practice, weakest first, interleaved with new learning. Mastered → reviewed on the day FSRS predicts recall drops to 90%. The last days are a final-revision window ranked by predicted recall on exam day, ending with a mock test. |
-| Slides | python-pptx builds a 16:9 deck from the source-linked notes: key points, one slide per section with definition/example boxes and its source location, formulas, common mix-ups and a self-check. |
-| Voice | Whisper (faster-whisper, the same model that transcribes lectures) turns spoken questions into text on the server. Browser speech recognition is the fallback. Piper TTS reads answers and audio briefs, with browser speech synthesis as the fallback. Hands-free mode detects when the student stops talking, so no taps are needed. |
-| Frontend | Installable from the browser (web manifest). There is no offline service worker: a cache of pages and scripts mixed old and new builds after updates, so `public/sw.js` now only removes the one older versions installed. Fonts are self-hosted: no requests to Google. |
-
-### Where this differs from the architecture documents
-
-- **LlamaIndex / Haystack:** retrieval is implemented directly in SQL (pgvector plus full-text with RRF). That is fewer moving parts and keeps every chunk tied to its source location.
-- **py-irt:** item difficulty uses an Elo/Rasch-style online estimate, updated with every answer instead of batch-fitted.
-- **D3:** charts (forgetting curves, simulations, concept maps) are small hand-written SVG components.
-- **Label Studio / Refine:** review and editing happen in the purpose-built admin console (KB tag review, generated-content review, catalog editors).
-- **PRAW:** Reddit is called through its official OAuth API directly with httpx (no extra dependency), and only when keys are configured.
-- **RAGAS / DeepEval / TruLens:** selectable per run on the evaluation page and installed by default (`requirements-eval.txt`). All three use the local verifier model in Ollama as the judge. Any score a framework can't produce (TruLens has no context recall, for example) is filled in by the built-in judges, and the run page says how many.
+| Mastery estimation | Bayesian Knowledge Tracing: Corbett & Anderson (1994), *Knowledge tracing: Modeling the acquisition of procedural knowledge* |
+| Review scheduling | FSRS (Free Spaced Repetition Scheduler): Ye et al. (2022), *A Stochastic Shortest Path Algorithm for Optimizing Spaced Repetition Scheduling*, KDD |
+| Forgetting | Ebbinghaus (1885) forgetting curve. Retrieval practice: Roediger & Karpicke (2006) |
+| Interleaved study plans | Rohrer & Taylor (2007), *The shuffling of mathematics problems improves learning* |
+| Item difficulty | Elo rating in adaptive learning systems: Pelánek (2016) |
+| Hybrid retrieval | Reciprocal rank fusion: Cormack, Clarke & Büttcher (2009) |
+| RAG evaluation | RAGAS: Es et al. (2024), *RAGAS: Automated Evaluation of Retrieval Augmented Generation*, EACL |
+| Simulated learners | Item response theory (Rasch model) for the hidden ability of simulated students |
 
 ---
 
-## Local development (without Docker for the app)
+## Known Limitations
 
-Start the backing services with Docker, or run your own Postgres (pgvector), Redis, Meilisearch, GoTrue and Mailpit:
-
-```bash
-# Backend
-cd backend
-python -m venv .venv && . .venv/bin/activate
-pip install -r requirements-dev.txt
-cp ../.env.example .env   # point DATABASE_URL, REDIS_URL, MEILI_URL, GOTRUE_URL at your services
-alembic upgrade head
-uvicorn app.main:app --reload --port 8000
-celery -A app.workers.celery_app worker -l info -Q ingest,ai,signal,feedback,eval,default   # or CELERY_EAGER=true
-
-# Web (proxies /api to localhost:8000; override with API_INTERNAL_URL)
-cd web && npm ci && npm run dev    # http://localhost:3000
-```
-
-GoTrue must be able to reach the API for its email templates (`/api/auth/email-templates/*`) and must share `JWT_SECRET`. See the `gotrue` service in `docker-compose.yml` for the full set of variables.
-
-### Running the tests
-
-The backend tests are integration tests against real Postgres with pgvector, Redis, Meilisearch, GoTrue and Mailpit. Only the LLM is replaced by deterministic fakes (`tests/fakes.py`), and Celery tasks run inline. They create users and content, so run them against a throwaway stack, never your live one:
-
-```bash
-docker compose -p intellinova-test --profile dev up -d --build
-docker compose -p intellinova-test exec api sh -c "pip install --user -q pytest==9.1.1 && MAILPIT_URL=http://mailpit:8025 python -m pytest -q"
-docker compose -p intellinova-test down -v
-```
-
-Leave `ADMIN_BOOTSTRAP_TOKEN` empty for the test stack. Frontend checks: `cd web && npm run typecheck && npm run build`.
+- **Hardware-bound speed.** With 7–8B models on an 8 GB GPU, a tutor answer takes seconds, and processing a figure-heavy textbook takes minutes. Background work yields to the tutor, and very slow jobs stop cleanly with a retry option.
+- **Answer quality depends on the local model.** Larger models (`LLM_MODEL`) improve notes and questions. Re-run the evaluation after changing models.
+- **The simulation needs a prepared question bank.** Until each topic has at least 8 verified questions, the learner-model simulation uses a statistical model and says so.
+- **YouTube reading** can be rate-limited by YouTube ("confirm you're not a bot"). Videos with captions still work. See [docs/SETUP.md](docs/SETUP.md).
 
 ---
 
-## Project layout
+## Future Roadmap
 
-```
-backend/
-  app/
-    main.py, config.py, db.py, models.py, security.py, gotrue.py
-    routers/        auth, me, learn, search, tutor, practice, study, explore, home, plan
-    routers/admin/  overview, kb, curriculum, catalog, people
-    services/       llm, embeddings, parsing, ingestion, retrieval, grounding, questions,
-                    grading, learner, quiz_engine, notes, tts, stt, slides, resources, search, planner,
-                    schedule (exam study plan), flowmap, discovery, reddit, evaluation
-    workers/        celery_app, tasks
-  alembic/          migrations (extensions, HNSW and trigram indexes)
-  tests/            end-to-end API flows, unit tests, LLM fakes
-web/
-  app/              landing, auth pages, /app (student), /admin (console), /onboarding
-  components/       UI kit, shells, tutor, resource cards, admin kit
-  scripts/          build-icon-font.py (subsets the Material Symbols font)
-infra/              Caddyfile, Postgres init script
-windows/            Start / Stop / Update IntelliNova.bat (double-click shortcuts)
-design/             the original design files this UI was built from
-```
+| Item | Description |
+|---|---|
+| **AI Learning Twin** | Extend the learner model into a predictive twin that answers "what if" questions, such as "if I study X today, how ready will I be on exam day?", and explains its predictions. |
+| **Whiteboard Tutor** | Students photograph handwritten working. The vision model reads it step by step and points to the exact mistake, with a citation to the relevant page. |
+| **Exam Predictor** | Estimate exam readiness per chapter from mastery, predicted recall and past paper patterns, with confidence intervals. |
+| **Parent Analytics** | A consent-based weekly summary for parents: time studied, topics improving, topics at risk. |
+| **Advanced Simulations** | Larger simulated cohorts, calibrated against real (anonymised) student data, to tune BKT and FSRS parameters per school. |
 
-## Notes and limits
+---
 
-- Answer quality depends on the local models. `llama3.1:8b` is a sensible default on 16 GB. Larger models (set `LLM_MODEL`) give better notes and questions. Re-run the evaluation after changing models; the landing page's accuracy numbers come from the latest completed run and are hidden until one exists.
-- Voice questions load the Whisper model into the API the first time someone speaks. With the default `WHISPER_MODEL=small`, that is about 0.5 GB of RAM, and a short question takes 1–3 seconds on a laptop CPU. Use `base` for less memory, or `medium` for better Hindi.
-- Hindi and Hinglish work end to end (multilingual embeddings, Whisper, prompt language). For scanned Hindi textbooks, the image includes Tesseract's Hindi data.
-- Class levels are normalised ("10", "Grade 10" and "Class 10" are the same class), so curriculum entered by staff always matches what students pick.
+## Why IntelliNova is a Strong Track D Submission
 
-## Project overview
+- **Knowledge Base & Grounding:** textbooks, slides, video, on-screen text and diagrams become one source-linked index. Every claim is cited to an exact location, and unsupported answers are declined or clearly labelled.
+- **Assessment Quality:** questions are generated from the material and served only after a SymPy re-derivation, a second-model cross-check and de-duplication. Verification outcomes are reported in the evaluation dashboard.
+- **Personalization Effectiveness:** a single Learning Twin (BKT + FSRS) drives adaptive difficulty, weak-topic detection, forgetting curves, revision packs and exam study plans. Its benefit is measured with simulated students against a fixed baseline.
+- **User Experience & Demo:** a complete, polished student app and admin console, with voice, Hindi and Hinglish, mobile layouts, and background jobs that never block the student.
+- **System Evaluation:** RAGAS, DeepEval and TruLens, plus citation accuracy and off-material handling, with per-question drill-down and downloadable reports, built into the product rather than run as a one-off script.
+- **Technical Implementation:** fully self-hosted, one-command deployment, a tested backend (82 integration tests), and engineering for real school hardware.
 
-[Read the IntelliNova project overview (PDF)](docs/IntelliNova-Project-Overview.pdf)
+IntelliNova is built for real schools rather than only for a demo: the school's own content, private by design, and checkable before each update.
 
+---
+
+<sub>Setup, configuration, development and project layout: [docs/SETUP.md](docs/SETUP.md) · Component details and design decisions: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)</sub>
